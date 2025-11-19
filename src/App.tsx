@@ -36,6 +36,57 @@ function App() {
       setShowUsernameInput(false);
     }
   }, []);
+  // When coming from external lobby (?room=&game=...), auto-open game
+  useEffect(() => {
+    // wait until username screen is done
+    if (showUsernameInput) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const roomCode = params.get("room");
+    const gameKey = params.get("game");
+
+    if (!gameKey) return;
+
+    if (roomCode) {
+      setCurrentRoomId(roomCode);
+    }
+
+    switch (gameKey) {
+      case "atlas-games":
+        // open Atlas games section
+        setCurrentView("atlas");
+        break;
+
+      case "mr-white":
+        setCurrentGame("MrWhite");
+        setCurrentView("game");
+        break;
+
+      case "who-am-i":
+        setCurrentGame("WhoAmI");
+        setCurrentView("game");
+        break;
+
+      case "spy-game":
+        setCurrentGame("SpyGame");
+        setCurrentView("game");
+        break;
+
+      case "dumb-charades":
+        setCurrentGame("DumbCharades");
+        setCurrentView("game");
+        break;
+
+      case "hollywood-bollywood":
+        setCurrentGame("HollywoodBollywoodGame");
+        setCurrentView("game");
+        break;
+
+      default:
+        // unknown gameKey → just stay on home
+        break;
+    }
+  }, [showUsernameInput]);
 
   const handleUsernameSubmit = (e: React.FormEvent) => {
     e.preventDefault();
