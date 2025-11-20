@@ -1,4 +1,3 @@
-import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Play, Pause, RotateCcw, Users, Clock, Trophy, Star, Zap, Crown, Shuffle, CheckCircle, XCircle } from 'lucide-react';
 import MultiplayerManager from '../utils/multiplayer';
 

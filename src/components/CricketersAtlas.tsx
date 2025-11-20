@@ -1,4 +1,3 @@
-import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Trophy, Clock, Users, CheckCircle, XCircle, Loader, Wifi } from 'lucide-react';
 import MultiplayerManager from '../utils/multiplayer';
 

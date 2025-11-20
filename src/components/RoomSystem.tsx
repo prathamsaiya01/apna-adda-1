@@ -1,4 +1,3 @@
-import React, { useEffect, useState } from "react";
 import { Wifi, PlusCircle, LogIn, Users } from "lucide-react";
 import { socket } from "../socket";
 

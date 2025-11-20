@@ -1,6 +1,6 @@
-// (paste the AdminPanel.tsx component here)
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { socket } from "./socket"; // Make sure client/src/socket.ts exists
+
 
 type Question = {
   _id?: string;

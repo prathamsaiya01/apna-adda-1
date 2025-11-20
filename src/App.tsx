@@ -1,4 +1,3 @@
-import React, { useState, useEffect } from 'react';
 import { Users, TowerControl as GameController2, Crown, Zap, Heart, Star, Lock, Play, Settings, Trophy, Wifi, Eye, Target, Film } from 'lucide-react';
 import { HelpCircle } from 'lucide-react';
 import AdminPanel from './components/AdminPanel';

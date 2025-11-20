@@ -1,4 +1,3 @@
-import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Users, MessageCircle, Send, Eye, EyeOff, Crown, Target, Clock, Star, ThumbsUp, ThumbsDown, HelpCircle, Minus } from 'lucide-react';
 import MultiplayerManager from '../utils/multiplayer';
 

@@ -1,4 +1,3 @@
-import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Eye, EyeOff, Users, MessageCircle, Send, Shuffle, RotateCcw, Crown, Target, Vote } from 'lucide-react';
 import MultiplayerManager from '../utils/multiplayer';
 
