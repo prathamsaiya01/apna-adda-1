@@ -4,6 +4,7 @@ import MultiplayerManager from '../utils/multiplayer';
 
 interface AdminPanelProps {
   onBack: () => void;
+  setCurrentView?: (v: 'home' | 'admin' | 'game' | 'rooms' | 'atlas' | 'multiplayer-admin') => void;
 }
 
 interface GameSession {
@@ -14,8 +15,9 @@ interface GameSession {
   endTime?: Date;
   winner?: string;
   totalMoves: number;
-  status: 'active' | 'completed' | 'abandoned';
+  status: 'active' | 'completed' | 'waiting';  // FIXED
 }
+
 
 interface PlayerStats {
   username: string;
@@ -28,7 +30,7 @@ interface PlayerStats {
   gamesPlayedList: string[];
 }
 
-const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
+const AdminPanel: React.FC<AdminPanelProps> = ({ onBack, setCurrentView }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [realPlayerStats, setRealPlayerStats] = useState<PlayerStats[]>([]);
   const [realGameSessions, setRealGameSessions] = useState<GameSession[]>([]);
@@ -38,17 +40,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   // Load real data from localStorage
   const loadRealData = () => {
     setIsLoading(true);
-    
+
     try {
       // Get all usernames that have been used
       const usedUsernames = new Set<string>();
-      
+
       // Check localStorage for username
       const savedUsername = localStorage.getItem('addaGamesUsername');
       if (savedUsername) {
         usedUsernames.add(savedUsername);
       }
-      
+
       // Get room data to find more players
       const rooms = multiplayerManager.getAllRooms();
       rooms.forEach((room: any) => {
@@ -56,7 +58,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
           usedUsernames.add(player);
         });
       });
-      
+
       // Convert rooms to game sessions
       const sessions: GameSession[] = rooms.map((room: any) => ({
         id: room.id,
@@ -66,10 +68,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
         endTime: room.status === 'completed' ? new Date(Date.now() - Math.random() * 3600000) : undefined,
         winner: room.status === 'completed' ? room.players[Math.floor(Math.random() * room.players.length)] : undefined,
         totalMoves: Math.floor(Math.random() * 50) + 10,
-        status: room.status === 'playing' ? 'active' : room.status === 'completed' ? 'completed' : 'waiting'
+       status: room.status === 'playing' ? 'active'
+       : room.status === 'completed' ? 'completed'
+       : 'waiting'
+
       }));
       setRealGameSessions(sessions);
-      
+
       // Create player stats from real usernames
       const playerStats: PlayerStats[] = Array.from(usedUsernames).map(username => {
         // Get games this player has participated in
@@ -79,20 +84,20 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
             playerGames.push(room.game);
           }
         });
-        
+
         // If no room data, check if this is the current user
         if (playerGames.length === 0 && username === savedUsername) {
           // This user exists but hasn't played in rooms yet
           playerGames.push('Individual Play');
         }
-        
+
         const gamesPlayed = playerGames.length;
         const gamesWon = Math.floor(gamesPlayed * (0.2 + Math.random() * 0.3)); // 20-50% win rate
-        const favoriteGame = playerGames.length > 0 ? 
-          playerGames.reduce((a, b, i, arr) => 
+        const favoriteGame = playerGames.length > 0 ?
+          playerGames.reduce((a, b, i, arr) =>
             arr.filter(v => v === a).length >= arr.filter(v => v === b).length ? a : b
           ) : 'None';
-        
+
         return {
           username,
           gamesPlayed,
@@ -104,14 +109,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
           gamesPlayedList: [...new Set(playerGames)] // Remove duplicates
         };
       });
-      
+
       setRealPlayerStats(playerStats);
     } catch (error) {
       console.error('Error loading real data:', error);
       setRealPlayerStats([]);
       setRealGameSessions([]);
     }
-    
+
     setIsLoading(false);
   };
 
@@ -123,9 +128,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
         localStorage.removeItem('addaMultiplayerSync');
         localStorage.removeItem('addaGameStates');
         localStorage.removeItem('addaGamesUsername');
-        
+
         // Clear any other game data keys that might exist
-        const keysToRemove = [];
+        const keysToRemove: string[] = [];
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i);
           if (key && (key.startsWith('adda') || key.startsWith('game') || key.startsWith('room'))) {
@@ -133,10 +138,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
           }
         }
         keysToRemove.forEach(key => localStorage.removeItem(key));
-        
+
         // Reload data
         loadRealData();
-        
+
         alert('All game data has been cleared successfully!');
       } catch (error) {
         console.error('Error clearing data:', error);
@@ -148,37 +153,37 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
   // Load data on component mount and set up refresh interval
   useEffect(() => {
     loadRealData();
-    
+
     // Refresh data every 10 seconds
     const interval = setInterval(loadRealData, 10000);
-    
+
     return () => clearInterval(interval);
   }, []);
 
   const stats = [
-    { 
-      label: 'Real Players', 
-      value: realPlayerStats.length.toString(), 
-      icon: Users, 
-      color: 'from-blue-500 to-blue-600' 
+    {
+      label: 'Real Players',
+      value: realPlayerStats.length.toString(),
+      icon: Users,
+      color: 'from-blue-500 to-blue-600'
     },
-    { 
-      label: 'Game Sessions', 
-      value: realGameSessions.length.toString(), 
-      icon: Trophy, 
-      color: 'from-green-500 to-green-600' 
+    {
+      label: 'Game Sessions',
+      value: realGameSessions.length.toString(),
+      icon: Trophy,
+      color: 'from-green-500 to-green-600'
     },
-    { 
-      label: 'Active Sessions', 
-      value: realGameSessions.filter(s => s.status === 'active').length.toString(), 
-      icon: BarChart3, 
-      color: 'from-purple-500 to-purple-600' 
+    {
+      label: 'Active Sessions',
+      value: realGameSessions.filter(s => s.status === 'active').length.toString(),
+      icon: BarChart3,
+      color: 'from-purple-500 to-purple-600'
     },
-    { 
-      label: 'System Status', 
-      value: 'Online', 
-      icon: Shield, 
-      color: 'from-emerald-500 to-emerald-600' 
+    {
+      label: 'System Status',
+      value: 'Online',
+      icon: Shield,
+      color: 'from-emerald-500 to-emerald-600'
     }
   ];
 
@@ -186,7 +191,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
-    
+
     if (diffMins < 1) return 'Just now';
     if (diffMins < 60) return `${diffMins}m ago`;
     const diffHours = Math.floor(diffMins / 60);
@@ -226,8 +231,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                 </h1>
               </div>
             </div>
-            
+
             <div className="flex items-center space-x-4">
+              {setCurrentView && (
+                <button
+                  onClick={() => setCurrentView('multiplayer-admin')}
+                  className="flex items-center space-x-2 px-3 py-1 bg-indigo-100 text-indigo-600 rounded-lg hover:bg-indigo-200 transition-colors duration-200"
+                  style={{ marginRight: 8 }}
+                >
+                  <Users className="w-4 h-4" />
+                  <span className="text-sm">Multiplayer Admin</span>
+                </button>
+              )}
+
               <button
                 onClick={loadRealData}
                 disabled={isLoading}
@@ -533,7 +549,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
                   </button>
                 </div>
               </div>
-              
+
               <div>
                 <h4 className="font-medium text-slate-900 mb-2">Database Status</h4>
                 <div className="flex items-center space-x-2">

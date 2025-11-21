@@ -10,6 +10,7 @@ import DumbCharades from './components/DumbCharades';
 import MrWhite from './components/MrWhite';
 import HollywoodBollywoodGame from './components/HollywoodBollywoodGame';
 import WhoAmI from './components/WhoAmI';
+import AdminPanelMultiplayer from './components/AdminPanelMultiplayer';
 
 interface GameSlot {
   id: number;
@@ -25,7 +26,8 @@ function App() {
   const [username, setUsername] = useState('');
   const [showUsernameInput, setShowUsernameInput] = useState(true);
   const [savedUsername, setSavedUsername] = useState('');
-  const [currentView, setCurrentView] = useState<'home' | 'admin' | 'game' | 'rooms' | 'atlas'>('home');
+const [currentView, setCurrentView] = useState<'home' | 'admin' | 'game' | 'rooms' | 'atlas' | 'multiplayer-admin'>('home');
+
   const [currentGame, setCurrentGame] = useState<string | null>(null);
   const [currentRoomId, setCurrentRoomId] = useState<string | null>(null);
 
@@ -265,9 +267,13 @@ function App() {
     );
   }
 
-  if (currentView === 'admin') {
-    return <AdminPanel onBack={handleBackToHome} />;
-  }
+if (currentView === 'admin') {
+  return <AdminPanel onBack={handleBackToHome} setCurrentView={setCurrentView} />;
+}
+
+if (currentView === 'multiplayer-admin') {
+  return <AdminPanelMultiplayer onBack={handleBackToHome} />;
+}
 
   if (currentView === 'rooms') {
     return <RoomSystem onBack={handleBackToHome} username={savedUsername} onJoinGame={handleJoinGame} />;
