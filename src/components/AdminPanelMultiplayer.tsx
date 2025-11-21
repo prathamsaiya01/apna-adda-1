@@ -1,3 +1,4 @@
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 // src/components/AdminPanelMultiplayer.tsx
 import React, { useEffect, useState } from "react";
 import { socket } from "../socket";
@@ -150,3 +151,4 @@ export default function AdminPanelMultiplayer({ onBack }: { onBack?: () => void 
     </div>
   );
 }
+
