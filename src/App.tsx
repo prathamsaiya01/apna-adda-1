@@ -1,4 +1,4 @@
-import { Users, TowerControl as GameController2, Crown, Zap, Heart, Star, Lock, Play, Settings, Trophy, Wifi, Eye, Target, Film } from 'lucide-react';
+import { Users, TowerControl as GameController2, Skull, Crown, Zap, Heart, Star, Lock, Play, Settings, Trophy, Wifi, Eye, Target, Film } from 'lucide-react';
 import { HelpCircle } from 'lucide-react';
 import AdminPanel from './components/AdminPanel';
 import CricketersAtlas from './components/CricketersAtlas';
@@ -9,6 +9,7 @@ import DumbCharades from './components/DumbCharades';
 import MrWhite from './components/MrWhite';
 import HollywoodBollywoodGame from './components/HollywoodBollywoodGame';
 import WhoAmI from './components/WhoAmI';
+import MafiaGame from './components/MafiaGame';
 import AdminPanelMultiplayer from './components/AdminPanelMultiplayer';
 
 interface GameSlot {
@@ -183,6 +184,16 @@ const [currentView, setCurrentView] = useState<'home' | 'admin' | 'game' | 'room
     },
     {
       id: 7,
+      name: "Mafia",
+      description: "Social deduction: Town vs Mafia (Offline & Online)",
+      icon: <Skull className="w-8 h-8" />,
+      color: "from-red-600 to-purple-800",
+      comingSoon: false,
+      component: 'Mafia'
+    },
+
+    {
+      id: 7,
       name: "Bollywood Quiz",
       description: "Test your Bollywood knowledge",
       icon: <Crown className="w-8 h-8" />,
@@ -295,6 +306,8 @@ if (currentView === 'multiplayer-admin') {
       return <HollywoodBollywoodGame onBack={handleBackToHome} username={savedUsername} roomId={currentRoomId} />;
     } else if (currentGame === 'WhoAmI') {
       return <WhoAmI onBack={handleBackToHome} username={savedUsername} roomId={currentRoomId} />;
+    } else if (currentGame === 'Mafia') {
+      return <MafiaGame onBack={handleBackToHome} username={savedUsername} roomId={currentRoomId} />;
     }
   }
 

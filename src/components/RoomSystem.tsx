@@ -76,6 +76,12 @@ const GAME_OPTIONS = [
     minPlayers: 2
   },
   {
+    key: "Mafia",
+    label: "Mafia",
+    desc: "Classic social deduction game (5-16 players)",
+    minPlayers: 5
+  },
+  {
     key: "HollywoodBollywoodGame",
     label: "Hollywood Bollywood",
     desc: "Guess Actor, Actress, Movie & Song from initials",

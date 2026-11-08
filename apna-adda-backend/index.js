@@ -51,7 +51,8 @@ const GAME_CATALOG = [
   { id: "who-am-i", name: "Who Am I?", minPlayers: 2, maxPlayers: 10 },
   { id: "spy-game", name: "Spy Game", minPlayers: 3, maxPlayers: 12 },
   { id: "dumb-charades", name: "Dumb Charades", minPlayers: 2, maxPlayers: 16 },
-  { id: "hollywood-bollywood", name: "Hollywood-Bollywood", minPlayers: 2, maxPlayers: 10 }
+  { id: "hollywood-bollywood", name: "Hollywood-Bollywood", minPlayers: 2, maxPlayers: 10 },
+  { id: "mafia", name: "Mafia", minPlayers: 5, maxPlayers: 16 }
 ];
 
 // ---------------- REST API ----------------

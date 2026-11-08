@@ -6,6 +6,7 @@ const WhoAmIEngine = require("./games/whoAmIEngine");
 const SpyGameEngine = require("./games/spyGameEngine");
 const DumbCharadesEngine = require("./games/dumbCharadesEngine");
 const HollywoodBollywoodEngine = require("./games/hollywoodBollywoodEngine");
+const MafiaEngine = require("./games/mafiaEngine");
 
 function normalizeGameKey(key) {
   if (!key) return "";
@@ -16,6 +17,7 @@ function normalizeGameKey(key) {
   if (clean.includes("spy")) return "SpyGame";
   if (clean.includes("charade")) return "DumbCharades";
   if (clean.includes("hollywood") || clean.includes("bollywood")) return "HollywoodBollywoodGame";
+  if (clean.includes("mafia")) return "Mafia";
   return key;
 }
 
@@ -281,6 +283,9 @@ class RoomManager {
         break;
       case "HollywoodBollywoodGame":
         engine = new HollywoodBollywoodEngine(room, this.io);
+        break;
+      case "Mafia":
+        engine = new MafiaEngine(room, this.io);
         break;
       default:
         console.warn("Unknown gameKey:", room.gameKey);
