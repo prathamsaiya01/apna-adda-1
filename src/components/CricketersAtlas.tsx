@@ -271,6 +271,52 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
 
   const handleConsiderMove = (accept: boolean) => {
     if (isMultiplayer && roomId) {
+      socket.emit(
+        'gameAction',
+        {
+          roomId,
+          action: 'voteConsideration',
+          payload: { accept, userId }
+        },
+        (res: any) => {
+          if (res?.error) alert(res.error);
+        }
+      );
+      setShowConsiderDialog(false);
+      setPendingMove(null);
+      return;
+    }
+
+    // Local single player fallback
+    if (!pendingMove) return;
+    const move: GameMove = {
+      player: pendingMove.proposedBy || players[currentPlayerIndex].name,
+      cricketer: accept ? pendingMove.cricketer : `${pendingMove.cricketer} [REJECTED]`,
+      letter: pendingMove.firstLetter,
+      timestamp: new Date().toISOString(),
+      isValid: accept
+    };
+
+    setGameHistory(prev => [...prev, move]);
+    if (accept) {
+      setPlayers(prev =>
+        prev.map((player, index) =>
+          index === currentPlayerIndex ? { ...player, score: player.score + 1 } : player
+        )
+      );
+      setRequiredLetter(pendingMove.lastLetter.toUpperCase());
+    }
+    nextLocalActivePlayer();
+    setShowConsiderDialog(false);
+    setPendingMove(null);
+    setCurrentInput('');
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentInput.trim() || isValidating) return;
+
+    if (isMultiplayer && roomId) {
       const activePlayer = players[currentPlayerIndex];
       const isMyTurn = activePlayer && (activePlayer.userId === userId || activePlayer.name === username);
       if (!isMyTurn) {
@@ -306,19 +352,25 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
 
     // Local single player logic
     const cricketerName = currentInput.trim();
-    const firstLetter = cricketerName.charAt(0).toLowerCase();
-    const lastLetter = cricketerName.charAt(cricketerName.length - 1).toLowerCase();
+    const alphaOnly = cricketerName.toLowerCase().replace(/[^a-z]/g, '');
+    if (alphaOnly.length < 2) {
+      alert('Please enter a cricketer name with at least 2 letters!');
+      return;
+    }
+
+    const firstLetter = alphaOnly.charAt(0);
+    const lastLetter = alphaOnly.charAt(alphaOnly.length - 1);
 
     if (requiredLetter && firstLetter !== requiredLetter.toLowerCase()) {
-      alert(`The cricketer's name must start with "${requiredLetter.toUpperCase()}"`);
+      alert(`The cricketer's name must start with "${requiredLetter.toUpperCase()}"! (You entered "${cricketerName}")`);
       return;
     }
 
     const alreadyUsed = gameHistory.some(
-      move => move.cricketer.toLowerCase() === cricketerName.toLowerCase()
+      move => move.cricketer.toLowerCase().replace(/[^a-z]/g, '') === alphaOnly
     );
     if (alreadyUsed) {
-      alert('This cricketer has already been named!');
+      alert(`"${cricketerName}" has already been named in this game!`);
       return;
     }
 
@@ -333,13 +385,15 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
         isValid: true
       };
       setGameHistory(prev => [...prev, move]);
-      setPlayers(prev => prev.map((player, index) =>
-        index === currentPlayerIndex ? { ...player, score: player.score + 1 } : player
-      ));
+      setPlayers(prev =>
+        prev.map((player, index) =>
+          index === currentPlayerIndex ? { ...player, score: player.score + 1 } : player
+        )
+      );
       setRequiredLetter(lastLetter.toUpperCase());
       nextLocalActivePlayer();
       setCurrentInput('');
-    }, 600);
+    }, 300);
   };
 
   const handleRestart = () => {
@@ -366,6 +420,11 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
   const isMyTurn = isMultiplayer
     ? activePlayer && (activePlayer.userId === userId || activePlayer.name === username)
     : true;
+
+  // Derivations for visual chain in Cricketers Atlas
+  const lastValidMove = [...gameHistory].reverse().find(m => m.isValid && !m.cricketer.includes('['));
+  const lastValidAlpha = lastValidMove?.cricketer?.replace(/[^a-zA-Z]/g, '') || '';
+  const previousLastLetter = lastValidAlpha ? lastValidAlpha.slice(-1).toUpperCase() : '';
 
   if (!gameStarted && !isMultiplayer) {
     return (
@@ -531,11 +590,19 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
                         ? `Your Turn, ${username}!`
                         : `${activePlayer?.name}'s Turn`}
                     </h3>
-                    {requiredLetter && !gameWinner && (
-                      <p className="text-sm text-slate-600">
-                        Name a cricketer starting with{' '}
-                        <span className="font-black text-xl text-orange-600">"{requiredLetter}"</span>
-                      </p>
+                    {!gameWinner && (
+                      requiredLetter ? (
+                        <p className="text-sm text-slate-700">
+                          Name a cricketer starting with{' '}
+                          <span className="font-black text-xl text-orange-600 bg-orange-100/70 px-2 py-0.5 rounded border border-orange-300">
+                            "{requiredLetter.toUpperCase()}"
+                          </span>
+                        </p>
+                      ) : (
+                        <p className="text-sm font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200">
+                          🏏 First Turn: Name any cricketer to start the chain!
+                        </p>
+                      )
                     )}
                     {activePlayer && activePlayer.timeoutCount > 0 && !gameWinner && (
                       <p className="text-xs text-orange-600 font-medium">
@@ -556,6 +623,26 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
                 </div>
               </div>
 
+              {lastValidMove && !gameWinner && (
+                <div className="mb-4 p-3 bg-gradient-to-r from-orange-50 via-amber-50 to-orange-50 rounded-xl border border-orange-200/90 flex flex-wrap items-center justify-between gap-2 shadow-sm">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-orange-800 bg-orange-200/80 px-2 py-0.5 rounded-full">
+                      Previous Cricketer
+                    </span>
+                    <span className="font-bold text-slate-900">{lastValidMove.cricketer}</span>
+                    <span className="text-slate-500 text-xs">by {lastValidMove.player}</span>
+                  </div>
+                  <div className="flex items-center space-x-1.5">
+                    <span className="text-xs font-semibold text-slate-600">Last Letter:</span>
+                    <span className="font-black text-lg text-orange-600 bg-white px-2.5 py-0.5 rounded-md shadow-sm border border-orange-300">
+                      {previousLastLetter}
+                    </span>
+                    <span className="text-orange-500 font-bold">➔</span>
+                    <span className="text-xs text-orange-700 font-medium">Starts next turn!</span>
+                  </div>
+                </div>
+              )}
+
               {!gameWinner && (
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="flex space-x-3">
@@ -566,8 +653,8 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
                       placeholder={
                         isMyTurn
                           ? requiredLetter
-                            ? `Cricketer starting with "${requiredLetter}"...`
-                            : 'Enter cricketer name...'
+                            ? `Cricketer starting with "${requiredLetter.toUpperCase()}" (e.g. Abhishek Sharma, Arshdeep Singh)... `
+                            : 'Name ANY cricketer to start (e.g. Abhishek Sharma, Rohit Sharma)...'
                           : `Waiting for ${activePlayer?.name} to answer...`
                       }
                       className="flex-1 px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-lg disabled:bg-slate-100"
@@ -637,20 +724,33 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
                     </p>
                   </div>
 
-                  <div className="flex space-x-3">
-                    <button
-                      onClick={() => handleConsiderMove(true)}
-                      className="flex-1 px-4 py-3 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition-colors duration-200"
-                    >
-                      ✓ Accept
-                    </button>
-                    <button
-                      onClick={() => handleConsiderMove(false)}
-                      className="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors duration-200"
-                    >
-                      ✗ Reject
-                    </button>
-                  </div>
+                  {(pendingMove.proposedById === userId || pendingMove.proposedBy === username) ? (
+                    <div className="p-4 bg-amber-50 rounded-xl border border-amber-200">
+                      <p className="text-sm font-semibold text-amber-800">
+                        Waiting for other players to verify & accept "{pendingMove.cricketer}"...
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <p className="text-sm text-slate-600">
+                        <strong>{pendingMove.proposedBy}</strong> submitted this cricketer. Do you accept it?
+                      </p>
+                      <div className="flex space-x-3">
+                        <button
+                          onClick={() => handleConsiderMove(true)}
+                          className="flex-1 px-4 py-3 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition-colors duration-200"
+                        >
+                          ✓ Accept
+                        </button>
+                        <button
+                          onClick={() => handleConsiderMove(false)}
+                          className="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors duration-200"
+                        >
+                          ✗ Reject
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

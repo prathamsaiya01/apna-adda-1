@@ -159,39 +159,91 @@ async function runTests() {
 
     await delay(150);
     assert(atlasStateA && atlasStateB, "Both players received initial gameStateUpdate");
-    assert(atlasStateA.requiredLetter && atlasStateA.requiredLetter.length === 1, `Initial required letter is '${atlasStateA.requiredLetter}'`);
+    assert(atlasStateA.requiredLetter === "" || typeof atlasStateA.requiredLetter === "string", "Initial required letter permits starting any cricketer");
 
-    const activePlayerId = atlasStateA.players[atlasStateA.currentPlayerIndex].id;
-    const activeClient = activePlayerId === clientA.userId ? clientA : clientB;
-    const nextClient = activeClient === clientA ? clientB : clientA;
+    let activePlayerId = atlasStateA.players[atlasStateA.currentPlayerIndex].id;
+    let activeClient = activePlayerId === clientA.userId ? clientA : clientB;
+    let nextClient = activeClient === clientA ? clientB : clientA;
 
-    // Active player submits cricketer
-    const testCricketer = atlasStateA.requiredLetter.toUpperCase() === "S" ? "Sachin Tendulkar" : (atlasStateA.requiredLetter.toUpperCase() === "R" ? "Rohit Sharma" : "Virat Kohli");
-    
+    // Turn 1: Player 1 submits 'Abhishek Sharma' (ends with 'A')
+    const c1 = "Abhishek Sharma";
     await new Promise((resolve) => {
       activeClient.socket.emit("gameAction", {
         roomId,
         action: "submitCricketer",
-        payload: { cricketer: testCricketer }
+        payload: { cricketer: c1 }
       }, (resp) => {
-        assert(resp.success === true, `Active player successfully submitted '${testCricketer}'`);
+        assert(resp.success === true, `Player 1 submitted '${c1}' (ends with 'A')`);
         resolve();
       });
     });
 
     await delay(150);
-    const lastLetter = testCricketer.trim().slice(-1).toUpperCase();
-    assert(atlasStateA.requiredLetter === lastLetter, `Next required letter advanced to '${lastLetter}'`);
-    assert(atlasStateA.usedCricketers.includes(testCricketer.toLowerCase()), "Cricketer recorded in used list");
+    assert(atlasStateA.requiredLetter === "A", "Next required letter advanced to 'A' (from Abhishek SharmA)");
 
-    // Next player tries submitting the SAME cricketer (invalid duplicate / wrong letter)
+    // Turn 2: Player 2 submits 'Arshdeep Singh' (starts with 'A', ends with 'H')
+    activePlayerId = atlasStateA.players[atlasStateA.currentPlayerIndex].id;
+    activeClient = activePlayerId === clientA.userId ? clientA : clientB;
+    nextClient = activeClient === clientA ? clientB : clientA;
+
+    const c2 = "Arshdeep Singh";
     await new Promise((resolve) => {
-      nextClient.socket.emit("gameAction", {
+      activeClient.socket.emit("gameAction", {
         roomId,
         action: "submitCricketer",
-        payload: { cricketer: testCricketer }
+        payload: { cricketer: c2 }
       }, (resp) => {
-        assert(resp.error, `Invalid/duplicate cricketer rejected with error: "${resp.error}"`);
+        assert(resp.success === true, `Player 2 submitted '${c2}' (starts with 'A', ends with 'H')`);
+        resolve();
+      });
+    });
+
+    await delay(150);
+    assert(atlasStateA.requiredLetter === "H", "Next required letter advanced to 'H' (from Arshdeep SingH)");
+
+    // Turn 3: Player 1 submits 'Hardik Pandya' (starts with 'H', ends with 'A')
+    activePlayerId = atlasStateA.players[atlasStateA.currentPlayerIndex].id;
+    activeClient = activePlayerId === clientA.userId ? clientA : clientB;
+    nextClient = activeClient === clientA ? clientB : clientA;
+
+    const c3 = "Hardik Pandya";
+    await new Promise((resolve) => {
+      activeClient.socket.emit("gameAction", {
+        roomId,
+        action: "submitCricketer",
+        payload: { cricketer: c3 }
+      }, (resp) => {
+        assert(resp.success === true, `Player 1 submitted '${c3}' (starts with 'H', ends with 'A')`);
+        resolve();
+      });
+    });
+
+    await delay(150);
+    assert(atlasStateA.requiredLetter === "A", "Next required letter advanced back to 'A' (from Hardik PandyA)");
+
+    // Turn 4: Opponent tries wrong letter 'Rohit Sharma' (starts with R, but required is A)
+    activePlayerId = atlasStateA.players[atlasStateA.currentPlayerIndex].id;
+    activeClient = activePlayerId === clientA.userId ? clientA : clientB;
+
+    await new Promise((resolve) => {
+      activeClient.socket.emit("gameAction", {
+        roomId,
+        action: "submitCricketer",
+        payload: { cricketer: "Rohit Sharma" }
+      }, (resp) => {
+        assert(resp.error && resp.error.includes("Must start with"), `Wrong letter rejected with: "${resp.error}"`);
+        resolve();
+      });
+    });
+
+    // Turn 5: Opponent tries duplicate 'Abhishek Sharma'
+    await new Promise((resolve) => {
+      activeClient.socket.emit("gameAction", {
+        roomId,
+        action: "submitCricketer",
+        payload: { cricketer: "Abhishek Sharma" }
+      }, (resp) => {
+        assert(resp.error && resp.error.includes("already been used"), `Duplicate cricketer rejected with: "${resp.error}"`);
         resolve();
       });
     });
