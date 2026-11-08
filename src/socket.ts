@@ -3,11 +3,25 @@ import { io, Socket } from "socket.io-client";
 
 export const getApiUrl = (): string => {
   if (typeof window !== "undefined") {
-    const custom = window.localStorage?.getItem("addaApiUrl");
-    if (custom) return custom.replace(/\/$/, "");
+    // 1. Check URL query param ?api=https://...
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const queryApi = urlParams.get("api");
+      if (queryApi && queryApi.trim()) {
+        const clean = queryApi.trim().replace(/\/$/, "");
+        window.localStorage?.setItem("addaApiUrl", clean);
+        return clean;
+      }
+    } catch (e) {
+      // ignore in environments without window search
+    }
 
+    // 2. Check saved custom API URL
+    const custom = window.localStorage?.getItem("addaApiUrl");
+    if (custom && custom.trim()) return custom.trim().replace(/\/$/, "");
+
+    // 3. Local dev: localhost, 127.0.0.1, or local LAN IP (e.g. 192.168.x.x, 10.x.x.x, 172.x.x.x)
     const host = window.location.hostname;
-    // Local dev: localhost, 127.0.0.1, or local LAN IP (e.g. 192.168.x.x, 10.x.x.x, 172.x.x.x)
     if (
       host === "localhost" ||
       host === "127.0.0.1" ||
@@ -18,10 +32,14 @@ export const getApiUrl = (): string => {
       return `http://${host}:4000`;
     }
   }
+
+  // 4. Vite Environment Variable
   const envUrl = import.meta.env.VITE_API_URL;
   if (envUrl && typeof envUrl === "string" && envUrl.trim()) {
     return envUrl.trim().replace(/\/$/, "");
   }
+
+  // 5. Default production backend
   return "https://apna-adda-backend.onrender.com";
 };
 
@@ -43,9 +61,9 @@ export const socket: Socket = io(getApiUrl(), {
 });
 
 socket.on("connect", () => {
-  console.log("Connected to Apna Adda server with socket ID:", socket.id);
+  console.log("Connected to Apna Adda server with socket ID:", socket.id, "at", getApiUrl());
 });
 
 socket.on("connect_error", (err) => {
-  console.warn("Socket connection warning:", err.message);
+  console.warn("Socket connection warning:", err.message, "targeting", getApiUrl());
 });
