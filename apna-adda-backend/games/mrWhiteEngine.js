@@ -1,4 +1,5 @@
 // apna-adda-backend/games/mrWhiteEngine.js
+const { secureChoice, secureRandomIndex } = require('../utils/secureRandom');
 
 const WORD_PAIRS = [
   // Fruits
@@ -87,12 +88,16 @@ class MrWhiteEngine {
   }
 
   start() {
-    this.wordPair = WORD_PAIRS[Math.floor(Math.random() * WORD_PAIRS.length)];
+    this.wordPair = secureChoice(WORD_PAIRS);
     this.state.category = this.wordPair.category;
 
-    const randIdx = Math.floor(Math.random() * this.state.players.length);
-    this.mrWhitePlayerId = this.state.players[randIdx].userId;
-    this.mrWhitePlayerName = this.state.players[randIdx].name;
+    // Cryptographically secure secret role assignment:
+    // Ensures equal probability across all eligible players without seat or index bias
+    const eligiblePlayers = this.state.players.filter(p => p.connected !== false);
+    const pool = eligiblePlayers.length > 0 ? eligiblePlayers : this.state.players;
+    const chosenMrWhite = secureChoice(pool);
+    this.mrWhitePlayerId = chosenMrWhite.userId;
+    this.mrWhitePlayerName = chosenMrWhite.name;
 
     this.state.gamePhase = 'clues';
     this.state.votingResults = [];

@@ -24,6 +24,7 @@ import {
   ChevronRight
 } from "lucide-react";
 import { socket, getUserId } from "../socket";
+import { secureFisherYatesShuffle } from "../utils/secureRandom";
 
 interface MafiaGameProps {
   onBack: () => void;
@@ -64,14 +65,7 @@ function getRoleConfig(count: number) {
   return { mafia: 4, detective: 1, doctor: 1, villager: count - 6 };
 }
 
-function shuffle<T>(array: T[]): T[] {
-  const arr = [...array];
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
-}
+
 
 const MafiaGame: React.FC<MafiaGameProps> = ({ onBack, username, roomId }) => {
   const userId = getUserId();
@@ -310,9 +304,12 @@ const MafiaGame: React.FC<MafiaGameProps> = ({ onBack, username, roomId }) => {
     for (let i = 0; i < config.doctor; i++) pool.push("doctor");
     while (pool.length < count) pool.push("villager");
 
-    const shuffled = shuffle(pool);
+    const shuffledRoles = secureFisherYatesShuffle(pool);
+    const playerIndices = secureFisherYatesShuffle(Array.from({ length: count }, (_, i) => i));
     const rolesMap = new Map<number, MafiaRole>();
-    shuffled.forEach((role, idx) => rolesMap.set(idx, role));
+    playerIndices.forEach((playerIdx, roleIdx) => {
+      rolesMap.set(playerIdx, shuffledRoles[roleIdx]);
+    });
 
     setOfflineRoles(rolesMap);
     setOfflineAliveStatus(new Array(count).fill(true));

@@ -1,4 +1,5 @@
 // apna-adda-backend/games/hollywoodBollywoodEngine.js
+const { secureChoice, secureRandomIndex } = require('../utils/secureRandom');
 
 const DEFAULT_MOVIES = [
   { id: '1', actor: 'Shah Rukh Khan', actress: 'Kajol', movie: 'Dilwale Dulhania Le Jayenge', song: 'Tujhe Dekha To', category: 'Bollywood', difficulty: 'Easy' },
@@ -55,7 +56,7 @@ class HollywoodBollywoodEngine {
   }
 
   start() {
-    this.state.currentPlayerIndex = 0;
+    this.state.currentPlayerIndex = secureRandomIndex(this.state.players.length);
     this.state.gameRound = 1;
     this.nextRound(true);
   }
@@ -66,7 +67,7 @@ class HollywoodBollywoodEngine {
       this.usedMovieIds.clear();
       unused = this.movies;
     }
-    const movie = unused[Math.floor(Math.random() * unused.length)];
+    const movie = secureChoice(unused) || unused[0];
     this.usedMovieIds.add(movie.id);
     this.currentMovie = movie;
 

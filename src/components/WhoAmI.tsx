@@ -16,6 +16,7 @@ import {
   Wifi
 } from 'lucide-react';
 import { socket, getUserId } from '../socket';
+import { secureChoice, secureRandomIndex } from '../utils/secureRandom';
 
 interface Player {
   id: string;
@@ -167,15 +168,18 @@ const WhoAmI: React.FC<WhoAmIProps> = ({ onBack, username, roomId }) => {
     if (players.length >= 2) {
       setGameStarted(true);
       setGameRound(1);
-      const random = localCelebrities[Math.floor(Math.random() * localCelebrities.length)];
+      const random = secureChoice(localCelebrities) || localCelebrities[0];
       setCurrentCelebrity(random);
       setShowCelebrityName(false);
       setQuestionsAsked(0);
+      const randHolderIdx = secureRandomIndex(players.length);
+      setCurrentPlayerIndex(randHolderIdx);
+      const holderName = players[randHolderIdx].name;
       setChatMessages([
         {
           id: Date.now().toString(),
           player: 'System',
-          message: `🎭 Round 1 started! ${players[0].name} has the celebrity name. Others ask Yes/No questions and have 3 guesses each!`,
+          message: `🎭 Round 1 started! ${holderName} has the celebrity name. Others ask Yes/No questions and have 3 guesses each!`,
           timestamp: new Date().toISOString(),
           type: 'system'
         }

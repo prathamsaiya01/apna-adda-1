@@ -1,4 +1,5 @@
 // apna-adda-backend/games/spyGameEngine.js
+const { secureChoice, secureRandomIndex } = require('../utils/secureRandom');
 
 const LOCATIONS = [
   'Hospital', 'Airport', 'Restaurant', 'Library', 'Beach', 'Hotel', 'Casino',
@@ -37,10 +38,12 @@ class SpyGameEngine {
   }
 
   start() {
-    this.currentLocation = LOCATIONS[Math.floor(Math.random() * LOCATIONS.length)];
-    const randIdx = Math.floor(Math.random() * this.state.players.length);
-    this.spyPlayerId = this.state.players[randIdx].userId;
-    this.spyPlayerName = this.state.players[randIdx].name;
+    this.currentLocation = secureChoice(LOCATIONS);
+    const eligiblePlayers = this.state.players.filter(p => p.connected !== false);
+    const pool = eligiblePlayers.length > 0 ? eligiblePlayers : this.state.players;
+    const chosenSpy = secureChoice(pool);
+    this.spyPlayerId = chosenSpy.userId;
+    this.spyPlayerName = chosenSpy.name;
 
     this.state.gamePhase = 'playing';
     this.state.gameWinner = '';

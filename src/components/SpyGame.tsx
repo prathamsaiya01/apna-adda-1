@@ -14,6 +14,7 @@ import {
   Target
 } from 'lucide-react';
 import { socket, getUserId } from '../socket';
+import { secureChoice, secureRandomIndex } from '../utils/secureRandom';
 
 interface Player {
   id: string;
@@ -146,9 +147,9 @@ const SpyGame: React.FC<SpyGameProps> = ({ onBack, username, roomId }) => {
 
   const startLocalGame = () => {
     if (players.length >= 3) {
-      const loc = localLocations[Math.floor(Math.random() * localLocations.length)];
+      const loc = secureChoice(localLocations) || localLocations[0];
       setCurrentLocation(loc);
-      const rand = Math.floor(Math.random() * players.length);
+      const rand = secureRandomIndex(players.length);
       setSpyPlayer(players[rand].name);
       setGameStarted(true);
       setGamePhase('playing');

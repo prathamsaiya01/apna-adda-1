@@ -1,4 +1,5 @@
 // apna-adda-backend/games/mafiaEngine.js
+const { secureFisherYatesShuffle } = require('../utils/secureRandom');
 
 /**
  * Official Mafia Role Configurations:
@@ -22,14 +23,7 @@ function getRoleDistribution(count) {
   return { mafia: 4, detective: 1, doctor: 1, villager: count - 6 };
 }
 
-function shuffle(array) {
-  const arr = [...array];
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
-}
+
 
 class MafiaEngine {
   constructor(room, io) {
@@ -119,10 +113,13 @@ class MafiaEngine {
     for (let i = 0; i < config.doctor; i++) rolesPool.push('doctor');
     while (rolesPool.length < count) rolesPool.push('villager');
 
-    const shuffledRoles = shuffle(rolesPool);
+    // Unbiased cryptographic Fisher-Yates shuffle
+    const shuffledRoles = secureFisherYatesShuffle(rolesPool);
+    // Also securely shuffle players so position/join order has zero influence
+    const shuffledPlayers = secureFisherYatesShuffle(players);
 
     this.secretRoles.clear();
-    players.forEach((p, idx) => {
+    shuffledPlayers.forEach((p, idx) => {
       this.secretRoles.set(p.userId, {
         role: shuffledRoles[idx],
         isAlive: true

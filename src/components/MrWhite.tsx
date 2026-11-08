@@ -14,6 +14,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { socket, getUserId } from '../socket';
+import { secureChoice, secureRandomIndex } from '../utils/secureRandom';
 
 interface Player {
   id: string;
@@ -165,9 +166,9 @@ const MrWhite: React.FC<MrWhiteProps> = ({ onBack, username, roomId }) => {
 
   const startLocalGame = () => {
     if (players.length >= 3) {
-      const pair = localWordPairs[Math.floor(Math.random() * localWordPairs.length)];
+      const pair = secureChoice(localWordPairs) || localWordPairs[0];
       setCurrentWordPair(pair);
-      const randIdx = Math.floor(Math.random() * players.length);
+      const randIdx = secureRandomIndex(players.length);
       setMrWhitePlayer(players[randIdx].name);
       setGameStarted(true);
       setGamePhase('clues');

@@ -1,4 +1,5 @@
 // apna-adda-backend/games/dumbCharadesEngine.js
+const { secureChoice, secureRandomIndex } = require('../utils/secureRandom');
 
 const MOVIES = [
   // EASY - 45s, 1pt
@@ -189,7 +190,7 @@ class DumbCharadesEngine {
   }
 
   start() {
-    this.state.currentPlayerIndex = 0;
+    this.state.currentPlayerIndex = secureRandomIndex(this.state.players.length);
     this.state.gameRound = 1;
     this.generateNewMovie();
     this.broadcastState();
@@ -202,7 +203,7 @@ class DumbCharadesEngine {
     }
     if (pool.length === 0) pool = MOVIES;
 
-    this.currentMovie = pool[Math.floor(Math.random() * pool.length)];
+    this.currentMovie = secureChoice(pool);
     this.state.timeLeft = this.currentMovie.timeLimit;
     this.state.isTimerRunning = false;
     this.pauseTimer();

@@ -35,6 +35,12 @@ import {
   BluffQuestionPair,
   getQuestionsByCategory
 } from '../data/bluffMastersQuestions';
+import {
+  secureChoice,
+  secureSample,
+  secureFisherYatesShuffle,
+  secureRandomIndex
+} from '../utils/secureRandom';
 
 // -------------------------------------------------------------
 // TYPES & INTERFACES
@@ -145,6 +151,8 @@ export const BluffMasters: React.FC<BluffMastersProps> = ({
   >('setup');
 
   const [offlinePlayers, setOfflinePlayers] = useState<OfflinePlayer[]>([]);
+  const [offlineDoubleTrouble, setOfflineDoubleTrouble] = useState<boolean>(false);
+  const [offlineBlufferIds, setOfflineBlufferIds] = useState<number[]>([]);
   const [offlineBlufferId, setOfflineBlufferId] = useState<number>(0);
   const [offlineCurrentTurnIndex, setOfflineCurrentTurnIndex] = useState<number>(0);
   const [offlineCurrentVoterIndex, setOfflineCurrentVoterIndex] = useState<number>(0);
@@ -381,21 +389,26 @@ export const BluffMasters: React.FC<BluffMastersProps> = ({
     roundNum: number,
     usedIds: Set<number>
   ) => {
-    // 1. Pick an unused question from category
+    // 1. Pick an unused question from category using cryptographic selection
     const pool = getQuestionsByCategory(offlineCategory);
     let available = pool.filter(q => !usedIds.has(q.id));
     if (available.length === 0) {
       available = pool; // reset pool if exhausted
     }
-    const chosen = available[Math.floor(Math.random() * available.length)];
+    const chosen = secureChoice(available) || available[0];
     const newUsedIds = new Set(usedIds);
     newUsedIds.add(chosen.id);
     setOfflineUsedQuestionIds(newUsedIds);
     setOfflineCurrentQuestion(chosen);
 
-    // 2. Pick a random Bluffer among players
-    const blufferIdx = Math.floor(Math.random() * currentPlayers.length);
-    setOfflineBlufferId(blufferIdx);
+    // 2. Cryptographically secure Bluffer assignment:
+    // In Double Trouble mode: 2 distinct Bluffers if enabled and >= 4 players.
+    // Otherwise 1 Bluffer.
+    const blufferCount = (offlineDoubleTrouble && currentPlayers.length >= 4) ? 2 : 1;
+    const allPlayerIds = currentPlayers.map(p => p.id);
+    const chosenBlufferIds = secureSample(allPlayerIds, blufferCount);
+    setOfflineBlufferIds(chosenBlufferIds);
+    setOfflineBlufferId(chosenBlufferIds[0]);
 
     // 3. Reset player round state
     const resetPlayers = currentPlayers.map(p => ({
@@ -426,10 +439,10 @@ export const BluffMasters: React.FC<BluffMastersProps> = ({
       setOfflineCurrentTurnIndex(offlineCurrentTurnIndex + 1);
       setOfflineStep('pass_phone');
     } else {
-      // All answered! Transition to discussion
-      const shuffled = updated
-        .map(p => ({ id: p.id, text: p.answer || '', playerId: p.id }))
-        .sort(() => Math.random() - 0.5);
+      // All answered! Cryptographically secure shuffle for anonymous answers
+      const shuffled = secureFisherYatesShuffle(
+        updated.map(p => ({ id: p.id, text: p.answer || '', playerId: p.id }))
+      );
 
       setOfflineShuffledAnswers(shuffled);
       setOfflineDiscussionTimer(60);
@@ -483,12 +496,16 @@ export const BluffMasters: React.FC<BluffMastersProps> = ({
       .map(Number)
       .filter(pid => voteCounts[pid] === maxVotes);
 
-    const blufferPlayer = finalPlayers[offlineBlufferId];
-    const blufferName = blufferPlayer ? blufferPlayer.name : 'The Bluffer';
-    const blufferCaught = mostVoted.length === 1 && mostVoted[0] === offlineBlufferId && maxVotes > 0;
-    const blufferVotes = voteCounts[offlineBlufferId] || 0;
+    const activeBlufferIds = offlineBlufferIds.length > 0 ? offlineBlufferIds : [offlineBlufferId];
+    const blufferNames = activeBlufferIds
+      .map(bid => finalPlayers.find(p => p.id === bid)?.name || 'The Bluffer')
+      .join(' & ');
 
-    let roundWinner: 'bluffer' | 'town' = 'bluffer';
+    // Any bluffer caught by majority?
+    const caughtBluffers = activeBlufferIds.filter(bid => mostVoted.includes(bid) && maxVotes > 0);
+    const anyBlufferCaught = caughtBluffers.length > 0;
+
+    let roundWinner: 'bluffer' | 'town' = anyBlufferCaught ? 'town' : 'bluffer';
     let roundSummary = '';
 
     const scoreDeltas: Record<number, number> = {};
@@ -496,29 +513,30 @@ export const BluffMasters: React.FC<BluffMastersProps> = ({
       scoreDeltas[p.id] = 0;
     });
 
-    if (blufferCaught) {
-      roundWinner = 'town';
-      scoreDeltas[offlineBlufferId] += 1; // +1 consolation
-      finalPlayers.forEach(p => {
-        if (p.id !== offlineBlufferId && p.votedForId === offlineBlufferId) {
-          scoreDeltas[p.id] += 2; // +2 for catching
-        }
-      });
-      roundSummary = `🎯 Busted! ${blufferName} was caught by the group! (+2 pts to correct voters, +1 pt to Bluffer).`;
-    } else {
-      roundWinner = 'bluffer';
-      if (blufferVotes === 0) {
-        scoreDeltas[offlineBlufferId] += 5; // Fooled everyone
-        roundSummary = `🎭 Masterclass Bluff! ${blufferName} fooled EVERYONE with 0 votes! (+5 pts).`;
+    activeBlufferIds.forEach(bid => {
+      const isCaught = caughtBluffers.includes(bid);
+      const votesReceived = voteCounts[bid] || 0;
+      if (isCaught) {
+        scoreDeltas[bid] += 1; // +1 consolation for caught bluffer
+      } else if (votesReceived === 0) {
+        scoreDeltas[bid] += 5; // Fooled everyone
       } else {
-        scoreDeltas[offlineBlufferId] += 3; // Survived
-        roundSummary = `🎉 Escaped! ${blufferName} survived the vote! (+3 pts).`;
+        scoreDeltas[bid] += 3; // Survived
       }
-      finalPlayers.forEach(p => {
-        if (p.id !== offlineBlufferId && p.votedForId === offlineBlufferId) {
-          scoreDeltas[p.id] += 2;
-        }
-      });
+    });
+
+    // Award +2 to regular players who correctly accused an actual bluffer
+    finalPlayers.forEach(p => {
+      if (!activeBlufferIds.includes(p.id) && p.votedForId !== null && activeBlufferIds.includes(p.votedForId)) {
+        scoreDeltas[p.id] += 2;
+      }
+    });
+
+    if (anyBlufferCaught) {
+      const caughtNames = caughtBluffers.map(bid => finalPlayers.find(p => p.id === bid)?.name).join(' & ');
+      roundSummary = `🎯 Busted! ${caughtNames} was caught by the group! (+2 pts to correct voters, +1 pt to Bluffer).`;
+    } else {
+      roundSummary = `🎉 Escaped! ${blufferNames} survived the vote! (+3/+5 pts to Bluffer).`;
     }
 
     // Apply scores
@@ -530,8 +548,8 @@ export const BluffMasters: React.FC<BluffMastersProps> = ({
     setOfflinePlayers(scoredPlayers);
 
     setOfflineRevealResult({
-      blufferId: offlineBlufferId,
-      blufferName,
+      blufferId: activeBlufferIds[0],
+      blufferName: blufferNames,
       regularQuestion: offlineCurrentQuestion?.regularQuestion || '',
       blufferQuestion: offlineCurrentQuestion?.blufferQuestion || '',
       roundWinner,
@@ -947,6 +965,30 @@ export const BluffMasters: React.FC<BluffMastersProps> = ({
               </div>
             </div>
 
+            {/* Double Trouble Mode Toggle */}
+            <div className="bg-slate-900/90 p-4 rounded-2xl border border-white/10 flex items-center justify-between">
+              <div>
+                <div className="text-sm font-bold text-white flex items-center gap-1.5">
+                  <Flame className="w-4 h-4 text-rose-400" />
+                  <span>Double Trouble Mode (2 Bluffers)</span>
+                </div>
+                <div className="text-xs text-slate-400">
+                  Selects 2 distinct secret Bluffers every round (requires 4+ players)
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOfflineDoubleTrouble(!offlineDoubleTrouble)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition border ${
+                  offlineDoubleTrouble
+                    ? 'bg-rose-500 text-white border-rose-400 shadow-md'
+                    : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
+                }`}
+              >
+                {offlineDoubleTrouble ? 'ON (2 Bluffers)' : 'OFF (1 Bluffer)'}
+              </button>
+            </div>
+
             <button
               onClick={startOfflineGame}
               className="w-full py-4 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 text-slate-950 font-black text-lg shadow-xl hover:scale-[1.01] active:scale-[0.99] transition flex items-center justify-center space-x-2"
@@ -1010,7 +1052,7 @@ export const BluffMasters: React.FC<BluffMastersProps> = ({
     // -----------------------------------------------------------
     if (offlineStep === 'answering') {
       const activePlayer = offlinePlayers[offlineCurrentTurnIndex];
-      const isBluffer = offlineCurrentTurnIndex === offlineBlufferId;
+      const isBluffer = (offlineBlufferIds.length > 0 ? offlineBlufferIds : [offlineBlufferId]).includes(activePlayer?.id ?? -1);
       const questionText = isBluffer
         ? offlineCurrentQuestion?.blufferQuestion
         : offlineCurrentQuestion?.regularQuestion;
@@ -1307,7 +1349,7 @@ export const BluffMasters: React.FC<BluffMastersProps> = ({
               </h3>
               <div className="space-y-2.5">
                 {offlinePlayers.map(p => {
-                  const isBluffer = p.id === offlineBlufferId;
+                  const isBluffer = (offlineBlufferIds.length > 0 ? offlineBlufferIds : [offlineBlufferId]).includes(p.id);
                   const votes = voteCounts[p.id] || 0;
                   const voters = votersFor[p.id] || [];
 

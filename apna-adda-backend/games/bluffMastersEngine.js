@@ -1,6 +1,12 @@
 // apna-adda-backend/games/bluffMastersEngine.js
 
 const { BLUFF_MASTERS_QUESTIONS, getQuestionsByCategory } = require('./bluffMastersQuestions');
+const {
+  secureChoice,
+  secureSample,
+  secureFisherYatesShuffle,
+  secureRandomInt
+} = require('../utils/secureRandom');
 
 class BluffMastersEngine {
   constructor(room, io) {
@@ -93,17 +99,19 @@ class BluffMastersEngine {
       this.usedQuestionIds.clear();
       unusedPool = availablePool;
     }
-    const questionPair = unusedPool[Math.floor(Math.random() * unusedPool.length)] || availablePool[0];
+    const questionPair = secureChoice(unusedPool) || availablePool[0];
     this.usedQuestionIds.add(questionPair.id);
 
-    // 2. Select Bluffer(s) with fair rotation
+    // 2. Select Bluffer(s) with Cryptographically Secure Randomization
     const connectedPlayers = this.state.players.filter(p => p.connected !== false);
-    const candidatePlayers = connectedPlayers.filter(p => !this.lastBlufferUserIds.includes(p.userId));
-    const poolForBluffer = candidatePlayers.length > 0 ? candidatePlayers : connectedPlayers;
+    // Double Trouble mode: 2 distinct Bluffers if enabled and at least 4 eligible players
+    const blufferCount = (this.doubleTrouble && connectedPlayers.length >= 4) ? 2 : 1;
 
-    const blufferCount = (this.doubleTrouble && connectedPlayers.length >= 6) ? 2 : 1;
-    const shuffledPool = [...poolForBluffer].sort(() => 0.5 - Math.random());
-    const selectedBluffers = shuffledPool.slice(0, blufferCount).map(p => p.userId);
+    // Cryptographically secure Fisher-Yates sample ensures:
+    // - Every player has an identical, unbiased probability
+    // - Independent random assignment every round (no hardcoded index or rotation)
+    // - Two distinct Bluffers in Double Trouble (no player assigned twice)
+    const selectedBluffers = secureSample(connectedPlayers, blufferCount).map(p => p.userId);
 
     this.lastBlufferUserIds = selectedBluffers;
 
@@ -206,8 +214,8 @@ class BluffMastersEngine {
       });
     });
 
-    // Deterministic yet unpredictable shuffle
-    const shuffled = rawAnswers.sort(() => 0.5 - Math.random());
+    // Unbiased cryptographically secure shuffle for anonymous answers
+    const shuffled = secureFisherYatesShuffle(rawAnswers);
     this.state.anonymousAnswers = shuffled.map((item, idx) => ({
       id: `ans_${idx + 1}`,
       text: item.text
@@ -238,7 +246,7 @@ class BluffMastersEngine {
     if (!text) return { error: "Message cannot be empty." };
 
     const msg = {
-      id: `${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: `${Date.now()}_${secureRandomInt(1000, 9999)}`,
       userId: player.userId,
       name: player.name,
       text: text.slice(0, 300),

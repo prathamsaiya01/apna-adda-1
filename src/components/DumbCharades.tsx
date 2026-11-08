@@ -15,6 +15,7 @@ import {
   Wifi
 } from 'lucide-react';
 import { socket, getUserId } from '../socket';
+import { secureChoice, secureRandomIndex } from '../utils/secureRandom';
 
 interface Player {
   id: string;
@@ -172,7 +173,7 @@ const DumbCharades: React.FC<DumbCharadesProps> = ({ onBack, username, roomId })
       pool = localMovies.filter(m => m.difficulty === selectedDifficulty);
     }
     if (pool.length === 0) pool = localMovies;
-    const rand = pool[Math.floor(Math.random() * pool.length)];
+    const rand = secureChoice(pool) || pool[0];
     setCurrentMovie(rand);
     setTimeLeft(rand.timeLimit);
     setIsTimerRunning(false);

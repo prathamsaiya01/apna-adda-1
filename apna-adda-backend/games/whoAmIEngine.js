@@ -1,4 +1,5 @@
 // apna-adda-backend/games/whoAmIEngine.js
+const { secureChoice, secureRandomIndex } = require('../utils/secureRandom');
 
 const CELEBRITIES = [
   { id: '1', name: 'Shah Rukh Khan', category: 'Bollywood Actor', difficulty: 'Easy' },
@@ -64,7 +65,7 @@ class WhoAmIEngine {
   }
 
   start() {
-    this.state.currentPlayerIndex = 0;
+    this.state.currentPlayerIndex = secureRandomIndex(this.state.players.length);
     this.state.gameRound = 1;
     this.nextRound(true);
   }
@@ -75,7 +76,7 @@ class WhoAmIEngine {
       this.state.gameRound += 1;
     }
 
-    this.currentCelebrity = CELEBRITIES[Math.floor(Math.random() * CELEBRITIES.length)];
+    this.currentCelebrity = secureChoice(CELEBRITIES);
     this.state.difficulty = this.currentCelebrity.difficulty;
     this.state.category = this.currentCelebrity.category;
     this.state.questionsAsked = 0;

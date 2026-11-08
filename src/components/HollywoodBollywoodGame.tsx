@@ -15,6 +15,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { socket, getUserId } from '../socket';
+import { secureChoice, secureRandomIndex } from '../utils/secureRandom';
 
 interface Player {
   id: string;
@@ -176,7 +177,7 @@ const HollywoodBollywoodGame: React.FC<HollywoodBollywoodGameProps> = ({ onBack,
   };
 
   const generateLocalMovie = () => {
-    const movie = defaultLocalMovies[Math.floor(Math.random() * defaultLocalMovies.length)];
+    const movie = secureChoice(defaultLocalMovies) || defaultLocalMovies[0];
     setCurrentMovie(movie);
     setInitials({
       actor: movie.actor.charAt(0).toUpperCase(),
