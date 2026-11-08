@@ -1,3 +1,4 @@
+import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Trophy, Clock, Users, CheckCircle, XCircle, Loader, Wifi } from 'lucide-react';
 import { socket, getUserId } from '../socket';
 

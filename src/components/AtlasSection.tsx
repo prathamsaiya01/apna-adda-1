@@ -1,3 +1,4 @@
+import React, { useState } from 'react';
 import { ArrowLeft, Trophy, Film, MapPin, Music, Book, Gamepad2, Star, Crown, Globe, Mic, Camera, Lock } from 'lucide-react';
 import CricketersAtlas from './CricketersAtlas';
 
