@@ -15,9 +15,26 @@ interface Player {
 interface GameMove {
   player: string;
   cricketer: string;
+  canonicalName?: string;
+  verifiedBy?: string;
   letter: string;
+  nextLetter?: string;
   timestamp: string | Date;
   isValid: boolean;
+}
+
+interface PendingVerification {
+  id: string;
+  cricketer: string;
+  firstLetter: string;
+  lastLetter: string;
+  proposerId?: string;
+  proposerName?: string;
+  eligibleVoterIds?: string[];
+  requiredApprovals?: number;
+  approvals?: string[];
+  rejections?: string[];
+  deadline?: number;
 }
 
 interface CricketersAtlasProps {
@@ -47,6 +64,8 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
   const [eliminatedMessage, setEliminatedMessage] = useState<string>('');
   const [gameWinner, setGameWinner] = useState<string>('');
   const [showConsiderDialog, setShowConsiderDialog] = useState(false);
+  const [pendingVerification, setPendingVerification] = useState<PendingVerification | null>(null);
+  const [verificationFeedback, setVerificationFeedback] = useState<string>('');
   const [pendingMove, setPendingMove] = useState<{
     cricketer: string;
     firstLetter: string;
@@ -114,12 +133,36 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
       if (s.eliminatedMessage !== undefined) {
         setEliminatedMessage(s.eliminatedMessage);
       }
+      if (s.verificationFeedback !== undefined) {
+        setVerificationFeedback(s.verificationFeedback);
+      }
 
-      if (s.pendingConsideration) {
-        setPendingMove(s.pendingConsideration);
+      if (s.pendingVerification || s.pendingConsideration) {
+        const pv = s.pendingVerification || s.pendingConsideration;
+        const normalizedPV: PendingVerification = {
+          id: pv.id || String(Date.now()),
+          cricketer: pv.cricketer,
+          firstLetter: pv.firstLetter,
+          lastLetter: pv.lastLetter,
+          proposerId: pv.proposerId || pv.proposedById,
+          proposerName: pv.proposerName || pv.proposedBy,
+          eligibleVoterIds: pv.eligibleVoterIds || [],
+          requiredApprovals: pv.requiredApprovals || 1,
+          approvals: pv.approvals || [],
+          rejections: pv.rejections || [],
+          deadline: pv.deadline
+        };
+        setPendingVerification(normalizedPV);
+        setPendingMove({
+          cricketer: pv.cricketer,
+          firstLetter: pv.firstLetter,
+          lastLetter: pv.lastLetter,
+          proposedBy: pv.proposerName || pv.proposedBy
+        });
         setShowConsiderDialog(true);
       } else {
         setShowConsiderDialog(false);
+        setPendingVerification(null);
         setPendingMove(null);
       }
     };
@@ -276,26 +319,43 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
         'gameAction',
         {
           roomId,
-          action: 'voteConsideration',
-          payload: { accept, userId }
+          action: 'voteVerification',
+          payload: { approve: accept, accept, userId }
         },
         (res: any) => {
-          if (res?.error) alert(res.error);
+          if (res?.error) setErrorFeedback(res.error);
         }
       );
-      setShowConsiderDialog(false);
-      setPendingMove(null);
+      // Optimistic update for local UI
+      if (pendingVerification) {
+        setPendingVerification(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            approvals: accept ? [...prev.approvals, userId] : prev.approvals,
+            rejections: !accept ? [...prev.rejections, userId] : prev.rejections
+          };
+        });
+      }
       return;
     }
 
     // Local single player fallback
-    if (!pendingMove) return;
+    const target = pendingVerification || (pendingMove ? {
+      cricketer: pendingMove.cricketer,
+      firstLetter: pendingMove.firstLetter,
+      lastLetter: pendingMove.lastLetter,
+      proposerName: pendingMove.proposedBy
+    } : null);
+
+    if (!target) return;
     const move: GameMove = {
-      player: pendingMove.proposedBy || players[currentPlayerIndex].name,
-      cricketer: accept ? pendingMove.cricketer : `${pendingMove.cricketer} [REJECTED]`,
-      letter: pendingMove.firstLetter,
+      player: target.proposerName || players[currentPlayerIndex].name,
+      cricketer: accept ? target.cricketer : `${target.cricketer} [REJECTED]`,
+      letter: target.firstLetter,
       timestamp: new Date().toISOString(),
-      isValid: accept
+      isValid: accept,
+      verifiedBy: accept ? 'local-pass' : 'local-reject'
     };
 
     setGameHistory(prev => [...prev, move]);
@@ -305,10 +365,11 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
           index === currentPlayerIndex ? { ...player, score: player.score + 1 } : player
         )
       );
-      setRequiredLetter(pendingMove.lastLetter.toUpperCase());
+      setRequiredLetter(target.lastLetter.toUpperCase());
     }
     nextLocalActivePlayer();
     setShowConsiderDialog(false);
+    setPendingVerification(null);
     setPendingMove(null);
     setCurrentInput('');
   };
@@ -663,6 +724,22 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
                 </div>
               )}
 
+              {verificationFeedback && (
+                <div className="mb-4 p-3.5 bg-amber-50 border-2 border-amber-300 rounded-xl text-amber-900 text-sm font-semibold flex items-center justify-between shadow-sm">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-base">📢</span>
+                    <span>{verificationFeedback}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setVerificationFeedback('')}
+                    className="text-amber-600 hover:text-amber-900 text-sm font-bold ml-2 px-1"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
               {!isMultiplayer && (
                 <div className="mb-4 p-3 bg-blue-50/90 rounded-xl border border-blue-200 flex flex-wrap items-center justify-between gap-2 shadow-sm">
                   <div className="flex items-center space-x-2">
@@ -743,49 +820,99 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
               )}
             </div>
 
-            {/* Consider Dialog */}
-            {showConsiderDialog && pendingMove && (
-              <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-                <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full">
-                  <div className="text-center mb-6">
-                    <div className="w-16 h-16 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow">
-                      <span className="text-2xl">🤔</span>
+            {/* Consider / Verification Dialog */}
+            {showConsiderDialog && (pendingVerification || pendingMove) && (
+              <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full border border-slate-200">
+                  <div className="text-center mb-5">
+                    <div className="w-16 h-16 bg-gradient-to-r from-amber-500 to-orange-500 rounded-full flex items-center justify-center mx-auto mb-3 shadow-md">
+                      <span className="text-3xl">🏏</span>
                     </div>
-                    <h3 className="text-xl font-bold text-gray-900 mb-2">Consider This Name?</h3>
-                    <p className="text-gray-600 mb-4">
-                      "<span className="font-semibold text-orange-600">{pendingMove.cricketer}</span>" is not in our
-                      verified list.
+                    <span className="px-3 py-1 bg-amber-100 text-amber-800 text-xs font-bold rounded-full uppercase tracking-wider">
+                      Community Verification
+                    </span>
+                    <h3 className="text-2xl font-black text-slate-900 mt-2">
+                      "{pendingVerification?.cricketer || pendingMove?.cricketer}"
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Submitted by <strong className="text-slate-800">{pendingVerification?.proposerName || pendingMove?.proposedBy}</strong>
                     </p>
-                    <p className="text-sm text-gray-500">
-                      Should this cricketer be accepted to continue the game?
-                    </p>
+                    <div className="flex items-center justify-center space-x-2 mt-2">
+                      <span className="text-xs px-2.5 py-1 bg-slate-100 rounded-md font-mono font-semibold text-slate-700">
+                        Starts: {pendingVerification?.firstLetter || pendingMove?.firstLetter}
+                      </span>
+                      <span className="text-xs text-slate-400">➔</span>
+                      <span className="text-xs px-2.5 py-1 bg-slate-100 rounded-md font-mono font-semibold text-slate-700">
+                        Ends: {pendingVerification?.lastLetter || pendingMove?.lastLetter}
+                      </span>
+                    </div>
                   </div>
 
-                  {(pendingMove.proposedById === userId || pendingMove.proposedBy === username) ? (
-                    <div className="p-4 bg-amber-50 rounded-xl border border-amber-200">
-                      <p className="text-sm font-semibold text-amber-800">
-                        Waiting for other players to verify & accept "{pendingMove.cricketer}"...
+                  {/* Proposer View (waiting) */}
+                  {((pendingVerification && (pendingVerification.proposerId === userId || pendingVerification.proposerName === username)) ||
+                    (pendingMove && (pendingMove.proposedBy === username))) ? (
+                    <div className="p-4 bg-amber-50/80 rounded-xl border border-amber-200 text-center space-y-2">
+                      <div className="flex items-center justify-center space-x-2 text-amber-800 font-bold text-sm">
+                        <Loader className="w-4 h-4 animate-spin text-amber-600" />
+                        <span>Waiting for room players to vote...</span>
+                      </div>
+                      <p className="text-xs text-amber-700">
+                        You submitted this name. Other players must approve it to add to the Atlas chain!
                       </p>
+                      {pendingVerification && (
+                        <div className="pt-2 border-t border-amber-200/60 flex items-center justify-around text-xs">
+                          <span className="text-emerald-700 font-bold">
+                            ✓ {pendingVerification.approvals.length} / {pendingVerification.requiredApprovals} Approvals
+                          </span>
+                          <span className="text-rose-700 font-bold">
+                            ✗ {pendingVerification.rejections.length} Rejections
+                          </span>
+                        </div>
+                      )}
                     </div>
                   ) : (
-                    <div className="space-y-3">
-                      <p className="text-sm text-slate-600">
-                        <strong>{pendingMove.proposedBy}</strong> submitted this cricketer. Do you accept it?
-                      </p>
-                      <div className="flex space-x-3">
-                        <button
-                          onClick={() => handleConsiderMove(true)}
-                          className="flex-1 px-4 py-3 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition-colors duration-200"
-                        >
-                          ✓ Accept
-                        </button>
-                        <button
-                          onClick={() => handleConsiderMove(false)}
-                          className="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors duration-200"
-                        >
-                          ✗ Reject
-                        </button>
-                      </div>
+                    /* Voter View */
+                    <div className="space-y-4">
+                      {pendingVerification && (pendingVerification.approvals.includes(userId) || pendingVerification.rejections.includes(userId)) ? (
+                        <div className="p-4 bg-blue-50 rounded-xl border border-blue-200 text-center space-y-2">
+                          <p className="text-sm font-bold text-blue-900">
+                            ✓ You have cast your vote ({pendingVerification.approvals.includes(userId) ? "Approved" : "Rejected"})
+                          </p>
+                          <p className="text-xs text-blue-700">
+                            Waiting for other players: {pendingVerification.approvals.length}/{pendingVerification.requiredApprovals} approvals needed.
+                          </p>
+                        </div>
+                      ) : (
+                        <div>
+                          <p className="text-sm text-slate-700 text-center mb-4">
+                            Is <strong>"{pendingVerification?.cricketer || pendingMove?.cricketer}"</strong> a real cricketer?
+                          </p>
+                          <div className="flex space-x-3">
+                            <button
+                              onClick={() => handleConsiderMove(true)}
+                              className="flex-1 py-3 px-4 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-xl font-bold shadow hover:shadow-lg transition-all flex items-center justify-center space-x-2"
+                            >
+                              <span>✓ Approve</span>
+                              {pendingVerification && (
+                                <span className="text-xs bg-white/20 px-1.5 py-0.5 rounded-full">
+                                  {pendingVerification.approvals.length}
+                                </span>
+                              )}
+                            </button>
+                            <button
+                              onClick={() => handleConsiderMove(false)}
+                              className="flex-1 py-3 px-4 bg-gradient-to-r from-rose-500 to-red-600 text-white rounded-xl font-bold shadow hover:shadow-lg transition-all flex items-center justify-center space-x-2"
+                            >
+                              <span>✗ Reject</span>
+                              {pendingVerification && (
+                                <span className="text-xs bg-white/20 px-1.5 py-0.5 rounded-full">
+                                  {pendingVerification.rejections.length}
+                                </span>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -846,13 +973,25 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
                                 <span className="text-white text-sm font-semibold">{move.player.charAt(0)}</span>
                               </div>
                               <div>
-                                <p
-                                  className={`font-medium ${
-                                    isElim ? 'text-red-800' : isRej ? 'text-orange-800' : 'text-gray-900'
-                                  }`}
-                                >
-                                  {move.cricketer}
-                                </p>
+                                <div className="flex items-center space-x-2 flex-wrap">
+                                  <p
+                                    className={`font-medium ${
+                                      isElim ? 'text-red-800' : isRej ? 'text-orange-800' : 'text-gray-900'
+                                    }`}
+                                  >
+                                    {move.cricketer}
+                                  </p>
+                                  {move.canonicalName && move.canonicalName.toLowerCase() !== move.cricketer.toLowerCase() && (
+                                    <span className="text-xs text-indigo-600 font-semibold bg-indigo-50 px-2 py-0.5 rounded-full">
+                                      {move.canonicalName}
+                                    </span>
+                                  )}
+                                  {move.verifiedBy === 'community-approved' && (
+                                    <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
+                                      👥 Community Verified
+                                    </span>
+                                  )}
+                                </div>
                                 <p className="text-sm text-gray-600">by {move.player}</p>
                               </div>
                             </div>

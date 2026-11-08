@@ -4,7 +4,7 @@ import backend from "./apna-adda-backend/index.js";
 const MafiaEngine = (await import("./apna-adda-backend/games/mafiaEngine.js")).default;
 
 const { server, roomManager } = backend;
-const TEST_PORT = 4056;
+const TEST_PORT = server.address()?.port || 4000;
 const SERVER_URL = `http://localhost:${TEST_PORT}`;
 
 function createClient(userId, name) {
@@ -38,12 +38,16 @@ async function runTests() {
   console.log("   APNA ADDA MAFIA MULTIPLAYER E2E TEST SUITE");
   console.log("==================================================\n");
 
-  await new Promise(resolve => {
-    server.listen(TEST_PORT, () => {
-      console.log(`Test server running on ${SERVER_URL}\n`);
-      resolve();
+  if (!server.listening) {
+    await new Promise(resolve => {
+      server.listen(TEST_PORT, () => {
+        console.log(`Test server running on ${SERVER_URL}\n`);
+        resolve();
+      });
     });
-  });
+  } else {
+    console.log(`Test server already running on ${SERVER_URL}\n`);
+  }
 
   try {
     // ---------------- TEST 1: Role Distributions 5 to 16 Players ----------------

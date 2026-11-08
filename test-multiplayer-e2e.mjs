@@ -3,7 +3,7 @@ import { io as Client } from "socket.io-client";
 import backend from "./apna-adda-backend/index.js";
 
 const { server, roomManager } = backend;
-const TEST_PORT = 4055;
+const TEST_PORT = server.address()?.port || 4000;
 const SERVER_URL = `http://localhost:${TEST_PORT}`;
 
 function createClient(userId, name) {
@@ -37,12 +37,16 @@ async function runTests() {
   console.log("   APNA ADDA MULTIPLAYER E2E TEST SUITE");
   console.log("==================================================\n");
 
-  await new Promise((resolve) => {
-    server.listen(TEST_PORT, () => {
-      console.log(`Test server running on ${SERVER_URL}\n`);
-      resolve();
+  if (!server.listening) {
+    await new Promise((resolve) => {
+      server.listen(TEST_PORT, () => {
+        console.log(`Test server running on ${SERVER_URL}\n`);
+        resolve();
+      });
     });
-  });
+  } else {
+    console.log(`Test server already running on ${SERVER_URL}\n`);
+  }
 
   try {
     // ---------------- TEST 1: REST API ----------------
@@ -247,6 +251,52 @@ async function runTests() {
         resolve();
       });
     });
+
+    // Turn 6: Opponent tests community verification with unknown player starting with 'A'
+    const unknownCricketer = "Abhay CustomCricketerK";
+    await new Promise((resolve) => {
+      activeClient.socket.emit("gameAction", {
+        roomId,
+        action: "submitCricketer",
+        payload: { cricketer: unknownCricketer }
+      }, (resp) => {
+        assert(resp.ok && resp.pendingVerification === true, `Unknown cricketer triggered community verification`);
+        resolve();
+      });
+    });
+
+    await delay(150);
+    assert(atlasStateA.pendingVerification !== null, "pendingVerification set in room state");
+    assert(atlasStateA.pendingVerification.cricketer === unknownCricketer, "Correct pending cricketer name");
+
+    // Proposer cannot vote on own submission
+    await new Promise((resolve) => {
+      activeClient.socket.emit("gameAction", {
+        roomId,
+        action: "voteVerification",
+        payload: { approve: true, userId: activeClient.userId }
+      }, (resp) => {
+        assert(resp.error && resp.error.includes("cannot vote on your own"), `Proposer blocked from voting: "${resp.error}"`);
+        resolve();
+      });
+    });
+
+    // Opponent votes approve
+    const voterClient = activeClient === clientA ? clientB : clientA;
+    await new Promise((resolve) => {
+      voterClient.socket.emit("gameAction", {
+        roomId,
+        action: "voteVerification",
+        payload: { approve: true, userId: voterClient.userId }
+      }, (resp) => {
+        assert(resp.ok && resp.result === "approved", `Community vote approved`);
+        resolve();
+      });
+    });
+
+    await delay(150);
+    assert(atlasStateA.pendingVerification === null, "pendingVerification cleared after approval");
+    assert(atlasStateA.requiredLetter === "K", `Required letter updated to last letter 'K' of '${unknownCricketer}'`);
 
     clientA.socket.disconnect();
     clientB.socket.disconnect();
@@ -494,13 +544,16 @@ async function runTests() {
     const reconnectedPlayer = roomAfterBRejoin.players.find(p => p.id === reconB.userId || p.userId === reconB.userId);
     assert(reconnectedPlayer && reconnectedPlayer.connected === true, "Player status restored to connected: true");
 
-    // Simulate Host A leaves -> Host migration to B
-    reconA.socket.disconnect();
-    await delay(200);
+    // Host A calls leaveRoom -> Immediate host migration to B
+    await new Promise((res) => {
+      reconA.socket.emit("leaveRoom", { roomId: reconRoom.room.id, userId: reconA.userId }, res);
+    });
+    await delay(100);
 
     const roomAfterHostDisconnect = roomManager.getRoom(reconRoom.room.id);
     assert(roomAfterHostDisconnect.hostId === reconB.userId, `Host migrated automatically to remaining active player: ${roomAfterHostDisconnect.hostId}`);
 
+    reconA.socket.disconnect();
     reconB2.socket.disconnect();
 
   } catch (err) {
