@@ -40,7 +40,7 @@ export const getApiUrl = (): string => {
   }
 
   // 5. Default production backend
-  return "https://apna-adda-backend.onrender.com";
+  return "https://apna-adda-backend-1.onrender.com";
 };
 
 export const getUserId = (): string => {
