@@ -1,19 +1,40 @@
-import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Eye, EyeOff, Users, MessageCircle, Send, Shuffle, RotateCcw, Crown, MapPin } from 'lucide-react';
-import MultiplayerManager from '../utils/multiplayer';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  ArrowLeft,
+  Eye,
+  EyeOff,
+  Users,
+  MessageCircle,
+  Send,
+  RotateCcw,
+  Crown,
+  MapPin,
+  Wifi,
+  Vote,
+  Target
+} from 'lucide-react';
+import { socket, getUserId } from '../socket';
 
 interface Player {
   id: string;
+  userId?: string;
   name: string;
   isHost: boolean;
   hasFlippedCard: boolean;
+  votes?: number;
+  hasVoted?: boolean;
 }
 
 interface ChatMessage {
   id: string;
   player: string;
   message: string;
-  timestamp: Date;
+  timestamp: string | Date;
+}
+
+interface PrivateCard {
+  isSpy: boolean;
+  location: string | null;
 }
 
 interface SpyGameProps {
@@ -23,138 +44,218 @@ interface SpyGameProps {
 }
 
 const SpyGame: React.FC<SpyGameProps> = ({ onBack, username, roomId }) => {
+  const userId = getUserId();
+  const isMultiplayer = !!roomId;
+
   const [players, setPlayers] = useState<Player[]>([
-    { id: '1', name: username, isHost: true, hasFlippedCard: false }
+    { id: '1', userId, name: username, isHost: true, hasFlippedCard: false }
   ]);
   const [gameStarted, setGameStarted] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<string>('');
   const [spyPlayer, setSpyPlayer] = useState<string>('');
+  const [myPrivateCard, setMyPrivateCard] = useState<PrivateCard | null>(null);
+  const [gamePhase, setGamePhase] = useState<'playing' | 'voting' | 'finished'>('playing');
+  const [gameWinner, setGameWinner] = useState<string>('');
+  const [winReason, setWinReason] = useState<string>('');
   const [newPlayerName, setNewPlayerName] = useState('');
   const [showAddPlayer, setShowAddPlayer] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
-  const [isMultiplayer, setIsMultiplayer] = useState(false);
-  const [multiplayerManager] = useState(() => MultiplayerManager.getInstance());
+  const [spyGuessLocation, setSpyGuessLocation] = useState('');
 
-  // Spy game locations
-  const locations = [
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Fallback locations for single-player local mode
+  const localLocations = [
     'Hospital', 'Airport', 'Restaurant', 'Library', 'Beach', 'Hotel', 'Casino',
-    'School', 'Factory', 'Space Station', 'Cruise Ship', 'Movie Set', 'Amusement Park',
-    'Submarine', 'Train Station', 'Police Station', 'Hospitality Suite', 'Zoo', 'Gym',
-    'Theater', 'Fire Station', 'Shopping Mall', 'Sports Stadium', 'Embassy', 'Nightclub',
-    'Cemetery', 'University Campus', 'Power Plant', 'Courtroom', 'Aquarium', 'Concert Hall',
-    'Television Studio', 'Bus Station', 'Military Base', 'Science Lab', 'Botanical Garden',
-    'Ski Resort', 'Golf Course', 'Prison', 'Circus', 'Observatory', 'Farm', 'Desert Tent',
-    'Mountain Cabin', 'Art Gallery', 'Ferry Terminal', 'Bakery', 'Garage', 'Race Track', 'Park'
+    'School', 'Space Station', 'Cruise Ship', 'Movie Set', 'Amusement Park',
+    'Submarine', 'Train Station', 'Police Station', 'Zoo', 'Gym', 'Theater'
   ];
 
-  // Initialize multiplayer mode if roomId is provided
+  // ---------------- MULTIPLAYER SYNC ----------------
   useEffect(() => {
-    if (roomId) {
-      setIsMultiplayer(true);
-      
-      // Load room data from multiplayer manager
-      const room = multiplayerManager.getRoom(roomId);
-      if (room) {
-        const roomPlayers: Player[] = room.players.map((playerName: string, index: number) => ({
-          id: (index + 1).toString(),
-          name: playerName,
-          isHost: playerName === room.host,
-          hasFlippedCard: false
-        }));
-        setPlayers(roomPlayers);
-        
-        // Listen for room updates
-        const handleRoomUpdate = (updatedRoom: any) => {
-          const updatedPlayers: Player[] = updatedRoom.players.map((playerName: string, index: number) => ({
-            id: (index + 1).toString(),
-            name: playerName,
-            isHost: playerName === updatedRoom.host,
-            hasFlippedCard: false
-          }));
-          setPlayers(updatedPlayers);
-        };
-        
-        multiplayerManager.on(`room:${roomId}`, handleRoomUpdate);
-        
-        return () => {
-          multiplayerManager.off(`room:${roomId}`, handleRoomUpdate);
-        };
-      } else {
-        // Fallback to single player
-        setPlayers([{ id: '1', name: username, isHost: true, hasFlippedCard: false }]);
-        }
-    }
-  }, [roomId, username, multiplayerManager]);
+    if (!isMultiplayer || !roomId) return;
 
-  const addPlayer = () => {
+    socket.emit('joinGame', { roomId, userId }, (res: any) => {
+      if (res?.error) console.warn('joinGame error:', res.error);
+    });
+
+    const handleGameState = (payload: any) => {
+      if (payload.gameKey !== 'SpyGame') return;
+      const s = payload.state;
+      if (!s) return;
+
+      setPlayers(s.players || []);
+      setGamePhase(s.gamePhase || 'playing');
+      setGameWinner(s.gameWinner || '');
+      setWinReason(s.winReason || '');
+      setChatMessages(s.chatMessages || []);
+      setGameStarted(true);
+
+      if (s.currentLocation) setCurrentLocation(s.currentLocation);
+      if (s.spyPlayerName) setSpyPlayer(s.spyPlayerName);
+    };
+
+    const handlePrivateState = (payload: any) => {
+      if (payload.gameKey !== 'SpyGame') return;
+      if (payload.privateCard) {
+        setMyPrivateCard(payload.privateCard);
+      }
+    };
+
+    socket.on('gameStateUpdate', handleGameState);
+    socket.on('privateStateUpdate', handlePrivateState);
+
+    // Initial private card fetch
+    socket.emit('gameAction', { roomId, action: 'getPrivateCard', payload: { userId } }, (res: any) => {
+      if (res?.card) setMyPrivateCard(res.card);
+    });
+
+    return () => {
+      socket.off('gameStateUpdate', handleGameState);
+      socket.off('privateStateUpdate', handlePrivateState);
+    };
+  }, [isMultiplayer, roomId, userId]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
+
+  const addLocalPlayer = () => {
     if (newPlayerName.trim() && players.length < 20) {
-      const newPlayer: Player = {
-        id: Date.now().toString(),
-        name: newPlayerName.trim(),
-        isHost: false,
-        hasFlippedCard: false
-      };
-      setPlayers([...players, newPlayer]);
+      setPlayers([
+        ...players,
+        {
+          id: Date.now().toString(),
+          userId: 'user-' + Date.now(),
+          name: newPlayerName.trim(),
+          isHost: false,
+          hasFlippedCard: false
+        }
+      ]);
       setNewPlayerName('');
       setShowAddPlayer(false);
     }
   };
 
-  const removePlayer = (playerId: string) => {
+  const removeLocalPlayer = (id: string) => {
     if (players.length > 1) {
-      setPlayers(players.filter(p => p.id !== playerId));
+      setPlayers(players.filter(p => p.id !== id));
     }
   };
 
-  const startGame = () => {
+  const startLocalGame = () => {
     if (players.length >= 3) {
-      // Randomly select location
-      const randomLocation = locations[Math.floor(Math.random() * locations.length)];
-      setCurrentLocation(randomLocation);
-      
-      // Randomly select spy
-      const randomSpyIndex = Math.floor(Math.random() * players.length);
-      setSpyPlayer(players[randomSpyIndex].name);
-      
+      const loc = localLocations[Math.floor(Math.random() * localLocations.length)];
+      setCurrentLocation(loc);
+      const rand = Math.floor(Math.random() * players.length);
+      setSpyPlayer(players[rand].name);
       setGameStarted(true);
-      // Reset all card flip states
+      setGamePhase('playing');
       setPlayers(prev => prev.map(p => ({ ...p, hasFlippedCard: false })));
     }
   };
 
   const resetGame = () => {
-    setGameStarted(false);
-    setCurrentLocation('');
-    setSpyPlayer('');
-    setPlayers(prev => prev.map(p => ({ ...p, hasFlippedCard: false })));
+    if (isMultiplayer && roomId) {
+      socket.emit('gameAction', { roomId, action: 'restartGame', payload: { userId } }, (res: any) => {
+        if (res?.error) alert(res.error);
+      });
+    } else {
+      setGameStarted(false);
+      setCurrentLocation('');
+      setSpyPlayer('');
+      setGamePhase('playing');
+      setGameWinner('');
+      setWinReason('');
+      setPlayers(prev => prev.map(p => ({ ...p, hasFlippedCard: false })));
+    }
   };
 
-  const flipCard = (playerId: string) => {
-    setPlayers(prev => prev.map(p => 
-      p.id === playerId ? { ...p, hasFlippedCard: !p.hasFlippedCard } : p
-    ));
+  const flipCard = (id: string) => {
+    if (isMultiplayer && roomId) {
+      socket.emit('gameAction', { roomId, action: 'flipCard', payload: { userId } });
+      return;
+    }
+    setPlayers(prev => prev.map(p => (p.id === id ? { ...p, hasFlippedCard: !p.hasFlippedCard } : p)));
+  };
+
+  const startVoting = () => {
+    if (isMultiplayer && roomId) {
+      socket.emit('gameAction', { roomId, action: 'startVoting', payload: { userId } }, (res: any) => {
+        if (res?.error) alert(res.error);
+      });
+      return;
+    }
+    setGamePhase('voting');
+  };
+
+  const votePlayer = (targetId: string) => {
+    if (isMultiplayer && roomId) {
+      socket.emit(
+        'gameAction',
+        {
+          roomId,
+          action: 'votePlayer',
+          payload: { targetUserId: targetId, userId }
+        },
+        (res: any) => {
+          if (res?.error) alert(res.error);
+        }
+      );
+    }
+  };
+
+  const submitSpyGuess = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!spyGuessLocation.trim()) return;
+
+    if (isMultiplayer && roomId) {
+      socket.emit(
+        'gameAction',
+        {
+          roomId,
+          action: 'spyGuessLocation',
+          payload: { location: spyGuessLocation.trim(), userId }
+        },
+        (res: any) => {
+          if (res?.error) alert(res.error);
+          else setSpyGuessLocation('');
+        }
+      );
+    }
   };
 
   const sendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (newMessage.trim()) {
-      const message: ChatMessage = {
-        id: Date.now().toString(),
-        player: username,
-        message: newMessage.trim(),
-        timestamp: new Date()
-      };
-      setChatMessages([...chatMessages, message]);
+    if (!newMessage.trim()) return;
+
+    if (isMultiplayer && roomId) {
+      socket.emit('gameAction', {
+        roomId,
+        action: 'sendChat',
+        payload: { message: newMessage.trim(), userId }
+      });
       setNewMessage('');
+      return;
     }
+
+    const msg: ChatMessage = {
+      id: Date.now().toString(),
+      player: username,
+      message: newMessage.trim(),
+      timestamp: new Date().toISOString()
+    };
+    setChatMessages(prev => [...prev, msg]);
+    setNewMessage('');
   };
 
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
+  const myPlayer = players.find(p => p.userId === userId || p.name === username);
+  const isMeSpy = myPrivateCard ? myPrivateCard.isSpy : myPlayer?.name === spyPlayer;
+  const myLocation = myPrivateCard ? myPrivateCard.location : currentLocation;
 
-  if (!gameStarted) {
+  // Single player setup
+  if (!gameStarted && !isMultiplayer) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-purple-900">
         <header className="bg-white/95 backdrop-blur-sm shadow-lg border-b border-white/20">
@@ -165,12 +266,12 @@ const SpyGame: React.FC<SpyGameProps> = ({ onBack, username, roomId }) => {
                 className="flex items-center space-x-2 text-slate-600 hover:text-purple-600 transition-colors duration-200"
               >
                 <ArrowLeft className="w-5 h-5" />
-                <span>{isMultiplayer ? 'Back to Room' : 'Back to Games'}</span>
+                <span>Back to Games</span>
               </button>
               <div className="flex items-center space-x-3">
                 <Eye className="w-6 h-6 text-purple-600" />
                 <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
-                  Spy Game {isMultiplayer && roomId && <span className="text-sm font-normal">({roomId})</span>}
+                  Spy Game
                 </h1>
               </div>
             </div>
@@ -178,213 +279,97 @@ const SpyGame: React.FC<SpyGameProps> = ({ onBack, username, roomId }) => {
         </header>
 
         <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Game Setup */}
-            <div className="lg:col-span-2">
-              <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-8 border border-white/20">
-                <div className="text-center mb-8">
-                  <Eye className="w-16 h-16 text-purple-600 mx-auto mb-4" />
-                  <h2 className="text-3xl font-bold text-slate-900 mb-2">Spy Game</h2>
-                  {isMultiplayer && (
-                    <div className="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
-                      <p className="text-purple-800 font-medium">Multiplayer Room: {roomId}</p>
-                      <p className="text-sm text-purple-600">Playing with friends online!</p>
-                    </div>
-                  )}
-                  <p className="text-slate-600 max-w-2xl mx-auto">
-                    One player is secretly the spy! Everyone else knows the location. 
-                    Ask questions to find the spy, but don't give away the location!
-                  </p>
-                </div>
-
-                {!isMultiplayer && (
-                  <div className="mb-8">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-semibold text-slate-900">Players ({players.length}/20)</h3>
-                      {players.length < 20 && (
-                        <button
-                          onClick={() => setShowAddPlayer(true)}
-                          className="px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 transition-colors duration-200"
-                        >
-                          Add Player
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                      {players.map((player) => (
-                        <div key={player.id} className="flex items-center justify-between p-3 bg-purple-50 rounded-lg border border-purple-200">
-                          <div className="flex items-center space-x-3">
-                            <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-blue-600 rounded-full flex items-center justify-center shadow-lg">
-                              <span className="text-white font-semibold">{player.name.charAt(0)}</span>
-                            </div>
-                            <div>
-                              <div className="flex items-center space-x-2">
-                                <span className="font-medium text-slate-900">{player.name}</span>
-                                {player.isHost && <Crown className="w-4 h-4 text-yellow-500" />}
-                              </div>
-                              <p className="text-sm text-slate-600">Ready to play</p>
-                            </div>
-                          </div>
-                          {!player.isHost && players.length > 1 && (
-                            <button
-                              onClick={() => removePlayer(player.id)}
-                              className="text-red-500 hover:text-red-700 text-sm"
-                            >
-                              Remove
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-
-                    {showAddPlayer && (
-                      <div className="mb-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
-                        <div className="flex space-x-3">
-                          <input
-                            type="text"
-                            value={newPlayerName}
-                            onChange={(e) => setNewPlayerName(e.target.value)}
-                            placeholder="Enter player name..."
-                            className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
-                            onKeyPress={(e) => e.key === 'Enter' && addPlayer()}
-                          />
-                          <button
-                            onClick={addPlayer}
-                            className="px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 transition-colors duration-200"
-                          >
-                            Add
-                          </button>
-                          <button
-                            onClick={() => setShowAddPlayer(false)}
-                            className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors duration-200"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div className="text-center">
-                  <button
-                    onClick={startGame}
-                    disabled={players.length < 3}
-                    className="px-8 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg font-semibold hover:from-purple-700 hover:to-blue-700 transform hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Start Spy Game
-                  </button>
-                  {players.length < 3 && (
-                    <p className="text-sm text-gray-500 mt-2">Need at least 3 players to start</p>
-                  )}
-                </div>
-              </div>
+          <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-8 border border-white/20 max-w-2xl mx-auto">
+            <div className="text-center mb-8">
+              <Eye className="w-16 h-16 text-purple-600 mx-auto mb-4" />
+              <h2 className="text-3xl font-bold text-slate-900 mb-2">Spy Game</h2>
+              <p className="text-slate-600">
+                One player is secretly the spy! Everyone else knows the secret location.
+                Ask questions to find the spy, but don't give away the location!
+              </p>
             </div>
 
-            {/* Chat Box (Multiplayer Only) */}
-            {isMultiplayer && (
-              <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-white/20">
-                <div className="p-4 border-b border-slate-200">
-                  <div className="flex items-center space-x-2">
-                    <MessageCircle className="w-5 h-5 text-purple-600" />
-                    <h3 className="text-lg font-semibold text-slate-900">Room Chat</h3>
-                  </div>
-                </div>
-                <div className="p-4 h-96 flex flex-col">
-                  <div className="flex-1 overflow-y-auto space-y-3 mb-4">
-                    {chatMessages.length === 0 ? (
-                      <p className="text-slate-500 text-center py-8">No messages yet...</p>
-                    ) : (
-                      chatMessages.map((msg) => (
-                        <div key={msg.id} className="flex flex-col space-y-1">
-                          <div className="flex items-center space-x-2">
-                            <span className="font-medium text-sm text-purple-600">{msg.player}</span>
-                            <span className="text-xs text-slate-500">{formatTime(msg.timestamp)}</span>
-                          </div>
-                          <p className="text-slate-800 bg-slate-50 rounded-lg px-3 py-2">{msg.message}</p>
-                        </div>
-                      ))
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-slate-900">Players ({players.length}/20)</h3>
+                <button
+                  onClick={() => setShowAddPlayer(true)}
+                  className="px-3 py-1.5 bg-purple-600 text-white rounded-lg text-sm font-semibold"
+                >
+                  Add Player
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {players.map(p => (
+                  <div key={p.id} className="p-3 bg-slate-50 rounded-lg flex items-center justify-between border">
+                    <span className="font-semibold text-slate-800">{p.name}</span>
+                    {players.length > 1 && (
+                      <button onClick={() => removeLocalPlayer(p.id)} className="text-xs text-red-500 hover:underline">
+                        Remove
+                      </button>
                     )}
                   </div>
-                  <form onSubmit={sendMessage} className="flex space-x-2">
-                    <input
-                      type="text"
-                      value={newMessage}
-                      onChange={(e) => setNewMessage(e.target.value)}
-                      placeholder="Type a message..."
-                      className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none text-sm"
-                    />
-                    <button
-                      type="submit"
-                      disabled={!newMessage.trim()}
-                      className="px-3 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
-                    >
-                      <Send className="w-4 h-4" />
-                    </button>
-                  </form>
-                </div>
+                ))}
               </div>
-            )}
 
-            {/* Game Rules */}
-            {!isMultiplayer && (
-              <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-white/20">
-                <div className="p-6 border-b border-slate-200">
-                  <h3 className="text-lg font-semibold text-slate-900">How to Play</h3>
+              {showAddPlayer && (
+                <div className="mt-4 flex space-x-2">
+                  <input
+                    value={newPlayerName}
+                    onChange={e => setNewPlayerName(e.target.value)}
+                    placeholder="Player name..."
+                    className="flex-1 px-3 py-2 border rounded-lg text-sm"
+                  />
+                  <button onClick={addLocalPlayer} className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-bold">
+                    Add
+                  </button>
                 </div>
-                <div className="p-6 space-y-4">
-                  <div className="flex items-start space-x-3">
-                    <div className="w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold">1</div>
-                    <p className="text-sm text-slate-600">One player is randomly chosen as the spy</p>
-                  </div>
-                  <div className="flex items-start space-x-3">
-                    <div className="w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold">2</div>
-                    <p className="text-sm text-slate-600">Everyone else knows the secret location</p>
-                  </div>
-                  <div className="flex items-start space-x-3">
-                    <div className="w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold">3</div>
-                    <p className="text-sm text-slate-600">Ask questions to find the spy without revealing the location</p>
-                  </div>
-                  <div className="flex items-start space-x-3">
-                    <div className="w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold">4</div>
-                    <p className="text-sm text-slate-600">Spy wins by guessing the location correctly</p>
-                  </div>
-                </div>
-              </div>
-            )}
+              )}
+            </div>
+
+            <button
+              onClick={startLocalGame}
+              disabled={players.length < 3}
+              className="w-full py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl font-bold disabled:opacity-50"
+            >
+              Start Game
+            </button>
           </div>
         </main>
       </div>
     );
   }
 
+  // Active game view
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-purple-900">
       <header className="bg-white/95 backdrop-blur-sm shadow-lg border-b border-white/20">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <button
-              onClick={resetGame}
+              onClick={onBack}
               className="flex items-center space-x-2 text-slate-600 hover:text-purple-600 transition-colors duration-200"
             >
-              <RotateCcw className="w-5 h-5" />
-              <span>New Game</span>
+              <ArrowLeft className="w-5 h-5" />
+              <span>Back to Games</span>
             </button>
-            
+
             <div className="flex items-center space-x-6">
               <div className="flex items-center space-x-2">
                 <Users className="w-5 h-5 text-slate-300" />
                 <span className="text-white">{players.length} players</span>
               </div>
-              <div className="flex items-center space-x-2">
-                <Eye className="w-5 h-5 text-purple-600" />
-                <span className="font-medium text-white">Location: {currentLocation}</span>
+              <div className="flex items-center space-x-2 bg-purple-500/20 px-3 py-1 rounded-full border border-purple-400/30">
+                <Eye className="w-4 h-4 text-purple-300" />
+                <span className="font-semibold text-sm text-white">
+                  {gamePhase === 'playing' ? 'Investigation' : gamePhase === 'voting' ? 'Voting Phase' : 'Game Over'}
+                </span>
               </div>
               {isMultiplayer && roomId && (
-                <div className="flex items-center space-x-2">
-                  <MessageCircle className="w-5 h-5 text-blue-400" />
-                  <span className="text-blue-400 font-medium">{roomId}</span>
+                <div className="flex items-center space-x-2 bg-blue-500/20 px-3 py-1 rounded-full border border-blue-400/30">
+                  <Wifi className="w-4 h-4 text-blue-300 animate-pulse" />
+                  <span className="text-blue-200 font-mono text-sm">{roomId}</span>
                 </div>
               )}
             </div>
@@ -394,148 +379,211 @@ const SpyGame: React.FC<SpyGameProps> = ({ onBack, username, roomId }) => {
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Game Cards */}
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-2 space-y-6">
+            {/* Cards & Status */}
             <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-6 border border-white/20">
-              <h2 className="text-2xl font-bold text-slate-900 mb-6">Player Cards</h2>
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900">Player Cards</h2>
+                  <p className="text-xs text-slate-500">Tap your personal card to view your role.</p>
+                </div>
+                {gamePhase === 'playing' && (
+                  <button
+                    onClick={startVoting}
+                    className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold rounded-xl text-sm shadow hover:opacity-90 flex items-center space-x-2"
+                  >
+                    <Vote className="w-4 h-4" />
+                    <span>Accuse / Vote</span>
+                  </button>
+                )}
+              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {players.map((player) => (
-                  <div key={player.id} className="relative">
-                    <div className="p-6 rounded-xl border-2 transition-all duration-300 bg-gradient-to-br from-slate-100 to-slate-200 border-slate-300">
-                      <div className="text-center">
-                        <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3 bg-gradient-to-r from-purple-500 to-blue-600 shadow-lg">
-                          <span className="text-white font-bold">{player.name.charAt(0)}</span>
-                        </div>
-                        <h3 className="font-bold text-slate-900 mb-2">{player.name}</h3>
-                        
-                        {player.hasFlippedCard ? (
-                          <button
-                            onClick={() => flipCard(player.id)}
-                            className="w-full p-4 rounded-lg bg-white border-2 border-purple-300 hover:border-purple-400 transition-all duration-200 shadow-lg"
-                          >
-                            {player.name === spyPlayer ? (
-                              <div className="text-center">
-                                <Eye className="w-8 h-8 text-purple-600 mx-auto mb-2" />
-                                <p className="font-bold text-purple-800">YOU ARE THE SPY!</p>
-                                <p className="text-sm text-purple-700 mt-1">Guess the location</p>
-                              </div>
+              {/* Player Cards Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+                {players.map(player => {
+                  const isMe = player.userId === userId || player.name === username;
+
+                  return (
+                    <div key={player.userId || player.id} className="relative">
+                      <div className="p-5 rounded-xl border-2 transition-all bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200">
+                        <div className="text-center">
+                          <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3 bg-gradient-to-r from-purple-500 to-blue-600 shadow-md">
+                            <span className="text-white font-bold">{player.name.charAt(0)}</span>
+                          </div>
+                          <h3 className="font-bold text-slate-900 mb-2">
+                            {player.name} {isMe && <span className="text-xs text-purple-600">(You)</span>}
+                          </h3>
+
+                          {isMe ? (
+                            player.hasFlippedCard ? (
+                              <button
+                                onClick={() => flipCard(player.id)}
+                                className="w-full p-4 rounded-xl bg-white border-2 border-purple-400 shadow transition"
+                              >
+                                {isMeSpy ? (
+                                  <div className="text-center">
+                                    <Eye className="w-7 h-7 text-purple-600 mx-auto mb-1 animate-pulse" />
+                                    <p className="font-black text-purple-800 text-xs">YOU ARE THE SPY!</p>
+                                    <p className="text-xs text-purple-600 mt-1">
+                                      Blend in & guess the secret location!
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <div className="text-center">
+                                    <MapPin className="w-7 h-7 text-emerald-600 mx-auto mb-1" />
+                                    <p className="font-black text-emerald-800 text-xs">SECRET LOCATION</p>
+                                    <p className="text-lg font-black text-emerald-700 mt-1">{myLocation}</p>
+                                    <p className="text-[10px] text-emerald-600 mt-0.5">Find who doesn't know it!</p>
+                                  </div>
+                                )}
+                              </button>
                             ) : (
-                              <div className="text-center">
-                                <MapPin className="w-8 h-8 text-purple-600 mx-auto mb-2" />
-                                <p className="font-bold text-purple-800 text-lg">{currentLocation}</p>
-                                <p className="text-sm text-purple-700 mt-1">Find the spy!</p>
-                              </div>
-                            )}
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => flipCard(player.id)}
-                            className="w-full p-4 bg-gradient-to-br from-purple-500 to-blue-600 rounded-lg border-2 border-purple-400 hover:from-purple-600 hover:to-blue-700 transition-all duration-200 transform hover:scale-105 shadow-lg"
-                          >
-                            <div className="text-center">
-                              <div className="w-8 h-8 bg-white bg-opacity-20 rounded-full flex items-center justify-center mx-auto mb-2">
-                                <span className="text-white font-bold">?</span>
-                              </div>
-                              <p className="text-white font-semibold">Tap to Reveal</p>
-                              <p className="text-purple-100 text-sm mt-1">Your secret role</p>
+                              <button
+                                onClick={() => flipCard(player.id)}
+                                className="w-full p-4 bg-gradient-to-br from-purple-500 to-blue-600 rounded-xl text-white font-bold shadow hover:scale-[1.02] transition"
+                              >
+                                <EyeOff className="w-6 h-6 mx-auto mb-1 opacity-80" />
+                                <p className="text-sm">Tap to Reveal</p>
+                              </button>
+                            )
+                          ) : (
+                            <div className="w-full p-4 bg-slate-200 rounded-xl text-slate-500 text-xs font-semibold flex items-center justify-center">
+                              <span>{player.hasFlippedCard ? 'Card Revealed' : 'Card Hidden'}</span>
                             </div>
-                          </button>
-                        )}
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
-              <div className="mt-8 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <div className="flex items-start space-x-3">
-                  <div className="w-6 h-6 bg-yellow-500 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <span className="text-white text-sm font-bold">!</span>
+              {/* Spy Guess Location Box (visible only to Spy) */}
+              {isMeSpy && gamePhase !== 'finished' && (
+                <div className="bg-purple-50 border-2 border-purple-300 rounded-2xl p-5 mb-6">
+                  <div className="flex items-center space-x-2 mb-3">
+                    <Target className="w-5 h-5 text-purple-600" />
+                    <h4 className="font-bold text-purple-900 text-sm">
+                      Spy Escape: Guess the Secret Location
+                    </h4>
                   </div>
-                  <div>
-                    <h4 className="font-semibold text-yellow-800 mb-1">Game Instructions:</h4>
-                    <ul className="text-sm text-yellow-700 space-y-1">
-                      <li>• Each player should tap their card to see their role privately</li>
-                      <li>• Take turns asking questions about the location</li>
-                      <li>• Non-spies: Find the spy without revealing the location</li>
-                      <li>• Spy: Try to guess the location from the questions</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Chat Box (Multiplayer) or Game Info */}
-          <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-white/20">
-            {isMultiplayer ? (
-              <>
-                <div className="p-4 border-b border-slate-200">
-                  <div className="flex items-center space-x-2">
-                    <MessageCircle className="w-5 h-5 text-purple-600" />
-                    <h3 className="text-lg font-semibold text-slate-900">Room Chat</h3>
-                  </div>
-                </div>
-                <div className="p-4 h-96 flex flex-col">
-                  <div className="flex-1 overflow-y-auto space-y-3 mb-4">
-                    {chatMessages.length === 0 ? (
-                      <p className="text-slate-500 text-center py-8">No messages yet...</p>
-                    ) : (
-                      chatMessages.map((msg) => (
-                        <div key={msg.id} className="flex flex-col space-y-1">
-                          <div className="flex items-center space-x-2">
-                            <span className="font-medium text-sm text-purple-600">{msg.player}</span>
-                            <span className="text-xs text-slate-500">{formatTime(msg.timestamp)}</span>
-                          </div>
-                          <p className="text-slate-800 bg-slate-50 rounded-lg px-3 py-2">{msg.message}</p>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                  <form onSubmit={sendMessage} className="flex space-x-2">
+                  <form onSubmit={submitSpyGuess} className="flex space-x-2">
                     <input
                       type="text"
-                      value={newMessage}
-                      onChange={(e) => setNewMessage(e.target.value)}
-                      placeholder="Type a message..."
-                      className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none text-sm"
+                      value={spyGuessLocation}
+                      onChange={e => setSpyGuessLocation(e.target.value)}
+                      placeholder="e.g. Hospital, Airport, Library..."
+                      className="flex-1 px-4 py-2.5 border border-purple-300 rounded-xl text-sm outline-none focus:ring-2 focus:ring-purple-500"
                     />
                     <button
                       type="submit"
-                      disabled={!newMessage.trim()}
-                      className="px-3 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+                      disabled={!spyGuessLocation.trim()}
+                      className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold rounded-xl text-sm disabled:opacity-50"
                     >
-                      <Send className="w-4 h-4" />
+                      Guess & Win
                     </button>
                   </form>
                 </div>
-              </>
-            ) : (
-              <>
-                <div className="p-6 border-b border-slate-200">
-                  <h3 className="text-lg font-semibold text-slate-900">How to Play</h3>
+              )}
+
+              {/* Voting Phase */}
+              {gamePhase === 'voting' && (
+                <div className="p-5 bg-slate-50 rounded-2xl border mb-6">
+                  <h4 className="font-bold text-slate-900 mb-3 text-sm">Vote for the Suspected Spy:</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {players.map(p => (
+                      <button
+                        key={p.userId || p.id}
+                        onClick={() => votePlayer(p.userId || p.id)}
+                        disabled={myPlayer?.hasVoted}
+                        className="p-3 bg-white rounded-xl border border-slate-200 flex items-center justify-between hover:bg-purple-50 transition disabled:opacity-60"
+                      >
+                        <span className="font-bold text-sm text-slate-800">{p.name}</span>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-xs font-semibold px-2 py-0.5 bg-slate-100 rounded-full">
+                            Votes: {p.votes || 0}
+                          </span>
+                          <Vote className="w-4 h-4 text-purple-600" />
+                        </div>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="p-6 space-y-4">
-                  <div className="flex items-start space-x-3">
-                    <div className="w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold">1</div>
-                    <p className="text-sm text-slate-600">One player is randomly chosen as the spy</p>
-                  </div>
-                  <div className="flex items-start space-x-3">
-                    <div className="w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold">2</div>
-                    <p className="text-sm text-slate-600">Everyone else knows the secret location</p>
-                  </div>
-                  <div className="flex items-start space-x-3">
-                    <div className="w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold">3</div>
-                    <p className="text-sm text-slate-600">Ask questions to find the spy without revealing the location</p>
-                  </div>
-                  <div className="flex items-start space-x-3">
-                    <div className="w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold">4</div>
-                    <p className="text-sm text-slate-600">Spy wins by guessing the location correctly</p>
+              )}
+
+              {/* Finished Results */}
+              {gamePhase === 'finished' && (
+                <div className="p-6 bg-slate-50 rounded-2xl border text-center">
+                  <div className="text-5xl mb-3">{gameWinner === 'spy' ? '🕵️‍♂️' : '🎉'}</div>
+                  <h3 className="text-2xl font-black text-slate-900 mb-1">
+                    {gameWinner === 'spy' ? 'The Spy Wins!' : 'The Civilians Win!'}
+                  </h3>
+                  <p className="text-sm text-slate-600 mb-4">{winReason}</p>
+                  <p className="text-xs text-slate-500 mb-6">
+                    Location: <strong>{currentLocation}</strong> • Spy: <strong>{spyPlayer}</strong>
+                  </p>
+                  <div className="flex justify-center space-x-3">
+                    <button onClick={onBack} className="px-5 py-2 bg-slate-700 text-white rounded-xl text-sm font-bold">
+                      Back to Games
+                    </button>
+                    <button
+                      onClick={resetGame}
+                      className="px-5 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl text-sm font-bold"
+                    >
+                      Play Again
+                    </button>
                   </div>
                 </div>
-              </>
-            )}
+              )}
+            </div>
+          </div>
+
+          {/* Chat Panel */}
+          <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-white/20 flex flex-col h-[520px]">
+            <div className="p-4 border-b border-slate-200 flex items-center space-x-2">
+              <MessageCircle className="w-5 h-5 text-purple-600" />
+              <h3 className="font-bold text-slate-900">Room Discussion</h3>
+            </div>
+
+            <div className="flex-1 p-4 overflow-y-auto space-y-3">
+              {chatMessages.length === 0 ? (
+                <p className="text-slate-400 text-center py-12 text-sm">
+                  Ask subtle questions to spot the spy without revealing the location!
+                </p>
+              ) : (
+                chatMessages.map(msg => (
+                  <div key={msg.id} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-bold text-xs text-purple-600">{msg.player}</span>
+                      <span className="text-[10px] text-slate-400">
+                        {typeof msg.timestamp === 'string'
+                          ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                          : new Date().toLocaleTimeString()}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-800">{msg.message}</p>
+                  </div>
+                ))
+              )}
+              <div ref={chatEndRef} />
+            </div>
+
+            <form onSubmit={sendMessage} className="p-3 border-t border-slate-200 flex space-x-2">
+              <input
+                type="text"
+                value={newMessage}
+                onChange={e => setNewMessage(e.target.value)}
+                placeholder="Ask or discuss..."
+                className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-purple-500"
+              />
+              <button
+                type="submit"
+                disabled={!newMessage.trim()}
+                className="px-3 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg disabled:opacity-50"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </form>
           </div>
         </div>
       </main>

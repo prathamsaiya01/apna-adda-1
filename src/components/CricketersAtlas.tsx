@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Trophy, Clock, Users, CheckCircle, XCircle, Loader, Wifi } from 'lucide-react';
-import MultiplayerManager from '../utils/multiplayer';
+import { socket, getUserId } from '../socket';
 
 interface Player {
   id: string;
+  userId?: string;
   name: string;
   score: number;
   isActive: boolean;
@@ -15,7 +16,7 @@ interface GameMove {
   player: string;
   cricketer: string;
   letter: string;
-  timestamp: Date;
+  timestamp: string | Date;
   isValid: boolean;
 }
 
@@ -26,8 +27,11 @@ interface CricketersAtlasProps {
 }
 
 const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roomId }) => {
+  const userId = getUserId();
+  const isMultiplayer = !!roomId;
+
   const [players, setPlayers] = useState<Player[]>([
-    { id: '1', name: username, score: 0, isActive: true, timeoutCount: 0, isEliminated: false }
+    { id: '1', userId, name: username, score: 0, isActive: true, timeoutCount: 0, isEliminated: false }
   ]);
   const [currentPlayerIndex, setCurrentPlayerIndex] = useState(0);
   const [gameHistory, setGameHistory] = useState<GameMove[]>([]);
@@ -46,54 +50,57 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
     cricketer: string;
     firstLetter: string;
     lastLetter: string;
+    proposedBy?: string;
   } | null>(null);
-  const [isMultiplayer, setIsMultiplayer] = useState(false);
-  const [multiplayerManager] = useState(() => MultiplayerManager.getInstance());
 
-  // Initialize multiplayer mode if roomId is provided
+  // ---------------- MULTIPLAYER SYNC ----------------
   useEffect(() => {
-    if (roomId) {
-      setIsMultiplayer(true);
-      
-      // Load room data from multiplayer manager
-      const room = multiplayerManager.getRoom(roomId);
-      if (room) {
-        const roomPlayers: Player[] = room.players.map((playerName: string, index: number) => ({
-          id: (index + 1).toString(),
-          name: playerName,
-          score: 0,
-          isActive: true,
-          timeoutCount: 0,
-          isEliminated: false
-        }));
-        setPlayers(roomPlayers);
-        
-        // Listen for room updates
-        const handleRoomUpdate = (updatedRoom: any) => {
-          const updatedPlayers: Player[] = updatedRoom.players.map((playerName: string, index: number) => ({
-            id: (index + 1).toString(),
-            name: playerName,
-            score: 0,
-            isActive: true,
-            timeoutCount: 0,
-            isEliminated: false
-          }));
-          setPlayers(updatedPlayers);
-        };
-        
-        multiplayerManager.on(`room:${roomId}`, handleRoomUpdate);
-        
-        return () => {
-          multiplayerManager.off(`room:${roomId}`, handleRoomUpdate);
-        };
-      } else {
-        // Fallback to single player
-        setPlayers([{ id: '1', name: username, score: 0, isActive: true, timeoutCount: 0, isEliminated: false }]);
-        }
-    }
-  }, [roomId, username, multiplayerManager]);
+    if (!isMultiplayer || !roomId) return;
 
-  // Game timer
+    // Join game channel
+    socket.emit('joinGame', { roomId, userId }, (res: any) => {
+      if (res?.error) console.warn('joinGame error:', res.error);
+    });
+
+    const handleGameState = (payload: any) => {
+      if (payload.gameKey !== 'CricketersAtlas') return;
+      const s = payload.state;
+      if (!s) return;
+
+      setPlayers(s.players || []);
+      setCurrentPlayerIndex(s.currentPlayerIndex ?? 0);
+      setRequiredLetter(s.requiredLetter || '');
+      setGameHistory(s.gameHistory || []);
+      if (typeof s.turnTimer === 'number') setTurnTimer(s.turnTimer);
+      setGameStarted(true);
+      setGameWinner(s.gameWinner || '');
+      setEliminatedMessage(s.eliminatedMessage || '');
+
+      if (s.pendingConsideration) {
+        setPendingMove(s.pendingConsideration);
+        setShowConsiderDialog(true);
+      } else {
+        setShowConsiderDialog(false);
+        setPendingMove(null);
+      }
+    };
+
+    const handleTimerTick = (data: { turnTimer?: number }) => {
+      if (typeof data.turnTimer === 'number') {
+        setTurnTimer(data.turnTimer);
+      }
+    };
+
+    socket.on('gameStateUpdate', handleGameState);
+    socket.on('timerTick', handleTimerTick);
+
+    return () => {
+      socket.off('gameStateUpdate', handleGameState);
+      socket.off('timerTick', handleTimerTick);
+    };
+  }, [isMultiplayer, roomId, userId]);
+
+  // Game timer (local clock display)
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (gameStarted && !gameWinner) {
@@ -104,14 +111,15 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
     return () => clearInterval(interval);
   }, [gameStarted, gameWinner]);
 
-  // Turn timer
+  // Turn timer for single player mode only
   useEffect(() => {
+    if (isMultiplayer) return; // Server handles multiplayer timer authoritatively!
     let interval: NodeJS.Timeout;
     if (gameStarted && turnTimer > 0 && !gameWinner) {
       interval = setInterval(() => {
         setTurnTimer(prev => {
           if (prev <= 1) {
-            handleTimeUp();
+            handleLocalTimeUp();
             return 30;
           }
           return prev - 1;
@@ -119,46 +127,64 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
       }, 1000);
     }
     return () => clearInterval(interval);
-  }, [gameStarted, turnTimer, currentPlayerIndex, gameWinner]);
+  }, [isMultiplayer, gameStarted, turnTimer, currentPlayerIndex, gameWinner]);
 
-  const handleTimeUp = () => {
+  // Single player local time up
+  const handleLocalTimeUp = () => {
     const currentPlayer = players[currentPlayerIndex];
     const newTimeoutCount = currentPlayer.timeoutCount + 1;
-    
-    // Update player's timeout count
-    setPlayers(prev => prev.map((player, index) => 
-      index === currentPlayerIndex 
-        ? { 
-            ...player, 
+
+    setPlayers(prev => prev.map((player, index) =>
+      index === currentPlayerIndex
+        ? {
+            ...player,
             timeoutCount: newTimeoutCount,
             isEliminated: newTimeoutCount >= 2
           }
         : player
     ));
 
-    // Show elimination message if player is eliminated
     if (newTimeoutCount >= 2) {
       setEliminatedMessage(`${currentPlayer.name} has been eliminated for timing out twice!`);
       setTimeout(() => setEliminatedMessage(''), 3000);
-      
-      // Add elimination to game history
+
       const eliminationMove: GameMove = {
         player: currentPlayer.name,
         cricketer: '[ELIMINATED - Timed out twice]',
         letter: '',
-        timestamp: new Date(),
+        timestamp: new Date().toISOString(),
         isValid: false
       };
       setGameHistory(prev => [...prev, eliminationMove]);
     } else {
-      // Show timeout warning
       setEliminatedMessage(`${currentPlayer.name} timed out! (${newTimeoutCount}/2 timeouts)`);
       setTimeout(() => setEliminatedMessage(''), 2000);
     }
 
-    // Move to next active player
     setTurnTimer(30);
-    nextActivePlayer();
+    nextLocalActivePlayer();
+  };
+
+  const nextLocalActivePlayer = () => {
+    const activePlayers = players.filter(p => !p.isEliminated);
+    if (activePlayers.length <= 1) {
+      if (activePlayers.length === 1) {
+        const winner = activePlayers[0].name;
+        setGameWinner(winner);
+        setEliminatedMessage(`🎉 ${winner} wins the game!`);
+      } else {
+        setGameWinner('No Winner');
+        setEliminatedMessage('Game over - no players remaining!');
+      }
+      return;
+    }
+
+    let nextIndex = (currentPlayerIndex + 1) % players.length;
+    while (players[nextIndex].isEliminated) {
+      nextIndex = (nextIndex + 1) % players.length;
+    }
+    setCurrentPlayerIndex(nextIndex);
+    setTurnTimer(30);
   };
 
   const addPlayer = () => {
@@ -185,220 +211,125 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
     }
   };
 
-  const validateCricketer = async (name: string): Promise<boolean> => {
-    setIsValidating(true);
-    
-    // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    const cleanName = name.trim().toLowerCase();
-    
-    // Complete list of verified cricketers
-    const knownCricketers = [
-      // A
-      'ab de villiers', 'aaron finch', 'aakash chopra', 'aamer sohail', 'abid ali', 'adam gilchrist', 'adam voges', 'adil rashid', 'ajay jadeja', 'ajit agarkar', 'akash deep', 'akila dananjaya', 'alan border', 'alastair cook', 'alex carey', 'alex hales', 'allan donald', 'allan lamb', 'alvin kallicharran', 'ambati rayudu', 'amol muzumdar', 'andre fletcher', 'andre russell', 'andrew flintoff', 'andrew strauss', 'andrew symonds', 'andy flower', 'andy roberts', 'angelo mathews', 'anil kumble', 'anrich nortje', 'anshuman gaekwad', 'anton devcich', 'anwar ali', 'aravinda de silva', 'arjuna ranatunga', 'arshdeep singh', 'ashish nehra', 'ashley giles', 'ashton agar', 'asif ali', 'asif iqbal', 'azam khan', 'azhar ali', 'azhar mahmood', 'mohammad azharuddin',
-      
-      // B
-      'babar azam', 'badrinath subramaniam', 'balaji r', 'barry richards', 'basil d\'oliveira', 'ben cutting', 'ben duckett', 'ben hilfenhaus', 'ben stokes', 'benny howell', 'bernard julien', 'bharat arun', 'bharat chipli', 'bharat khanna', 'bhuvneshwar kumar', 'bill lawry', 'bill ponsford', 'billy bowden', 'billy murdoch', 'biswarup das', 'biswajit paul', 'bj watling', 'bob simpson', 'bob taylor', 'bobby simpson', 'brad haddin', 'brad hodge', 'don bradman', 'brendan taylor', 'brian lara', 'brendon mccullum', 'brett lee', 'bruce reid', 'bryce mcgain',
-      
-      // C
-      'cameron bancroft', 'cameron green', 'cameron white', 'carl hooper', 'carlos brathwaite', 'chaminda vaas', 'chamari athapaththu', 'chandika hathurusingha', 'chandrasekhar bs', 'chamu chibhabha', 'charith asalanka', 'cheteshwar pujara', 'chris cairns', 'chris gayle', 'chris harris', 'chris jordan', 'chris lynn', 'chris silverwood', 'chris woakes', 'chetan chauhan', 'chetan sharma', 'chirag jani', 'clarrie grimmett', 'colin croft', 'colin de grandhomme', 'colin ingram', 'colin munro', 'craig kieswetter', 'craig mcmillan', 'curtly ambrose', 'cyril washbrook',
-      
-      // D
-      'damien fleming', 'damien martyn', 'dale steyn', 'daljit singh', 'daryl mitchell', 'darren bravo', 'darren gough', 'darren lehmann', 'darren sammy', 'daryll cullinan', 'dasun shanaka', 'dave nourse', 'david boon', 'david gower', 'david hussey', 'david lloyd', 'david miller', 'david warner', 'dean elgar', 'dean jones', 'deepak chahar', 'deepak hooda', 'denis compton', 'dennis lillee', 'devdutt padikkal', 'devendra bishoo', 'devon conway', 'dilip doshi', 'dilip vengsarkar', 'dinesh karthik', 'dinesh mongia', 'dirk nannes', 'dominic cork', 'don bradman', 'doug bracewell', 'doug walters', 'doug wright', 'dwayne bravo', 'dwayne smith',
-      
-      // E
-      'easwaran abhimanyu', 'ed cowan', 'ed joyce', 'eddie paynter', 'eddie st george', 'eknath solkar', 'dean elgar', 'eoin morgan', 'erapalli prasanna', 'ernest hall', 'eric bedser', 'eric hollies', 'ernie toshack', 'craig ervine', 'esmond kentish', 'evin lewis',
-      
-      // F
-      'faf du plessis', 'farokh engineer', 'fazal mahmood', 'fazal subhan', 'fawad alam', 'felix mwamba', 'chamara fernando', 'feroz khan', 'fidel edwards', 'finn allen', 'fred spofforth', 'fred trueman', 'andrew flintoff',
-      
-      // G
-      'gagan khoda', 'gajanand singh', 'gareth batty', 'gareth delany', 'gareth hopkins', 'gary ballance', 'gary kirsten', 'gautam gambhir', 'gavin larsen', 'geoff allott', 'geoff boycott', 'geoff marsh', 'geoffrey dujon', 'george bailey', 'george headley', 'george lohmann', 'george worker', 'gerald coetzee', 'gerald gomez', 'glenn maxwell', 'glenn mcgrath', 'glenn phillips', 'graeme hick', 'graeme pollock', 'graeme smith', 'graeme swann', 'grant elliott', 'grant flower', 'greg blewett', 'greg chappell', 'greg matthews', 'greg ritchie', 'gregory stephen',
-      
-      // H
-      'habibul bashar', 'haider ali', 'hamid hassan', 'hamilton masakadza', 'hamza nadeem', 'hanuma vihari', 'hardik pandya', 'harbhajan singh', 'haris rauf', 'harshal patel', 'hashan tillakaratne', 'hashim amla', 'hasan ali', 'hassan mahmood', 'hayden walsh jr', 'heath streak', 'heinrich klaasen', 'henry olonga', 'henry shipley', 'herschelle gibbs', 'hilton cartwright', 'himanshu rana', 'hitendra thakur', 'hossein zaman',
-      
-      // I
-      'ian bell', 'ian botham', 'ian chappell', 'ian healy', 'ian redpath', 'ian smith', 'ian trott', 'iftikhar ahmed', 'ijaz ahmed', 'imad wasim', 'imran farhat', 'imran khan', 'imran nazir', 'imrul kayes', 'irfan pathan', 'ish sodhi', 'ishant sharma', 'isuru udana',
-      
-      // J
-      'jack hobbs', 'jack russell', 'jack leach', 'jack moroney', 'jack ryder', 'jacob oram', 'jacques kallis', 'jade dernbach', 'james anderson', 'james faulkner', 'james franklin', 'james neesham', 'jamie overton', 'jamie siddons', 'javed miandad', 'jayant yadav', 'sanath jayasuriya', 'jaydev unadkat', 'jayesh patel', 'jemimah rodrigues', 'jofra archer', 'johan botha', 'john bracewell', 'john emburey', 'john inverarity', 'john morrison', 'john snow', 'jon holland', 'jonny bairstow', 'jonathan trott', 'jordan cox', 'jos buttler', 'josh hazlewood', 'jp duminy', 'julian weiner', 'justin langer',
-      
-      // K
-      'kabir ali', 'kagiso rabada', 'mohammad kaif', 'romesh kaluwitharana', 'kamran akmal', 'kamindu mendis', 'kane richardson', 'kane williamson', 'kapil dev', 'karun nair', 'kasigo senamela', 'kasun rajitha', 'kaushal silva', 'keith arthurton', 'keith miller', 'ken barrington', 'ken rutherford', 'kenneth jackson', 'kepler wessels', 'kevin pietersen', 'khaleel ahmed', 'khurram manzoor', 'kieron pollard', 'kim hughes', 'kingsley holgate', 'kirk edwards', 'kl rahul', 'kuldeep yadav', 'kumar sangakkara', 'kuruvilla abeywickrama',
-      
-      // L
-      'lakshmipathy balaji', 'lalit modi', 'lalit yadav', 'lance cairns', 'lance gibbs', 'lance klusener', 'larry gomes', 'lasith malinga', 'laurence packer', 'lawrence rowe', 'lendl simmons', 'len hutton', 'leslie ames', 'liam dawson', 'liam livingstone', 'liam plunkett', 'lionel cann', 'lionel tennyson', 'lockie ferguson', 'lokesh rahul', 'lonwabo tsotsobe', 'lou vincent', 'louie meyer', 'luke ronchi', 'luke wright',
-      
-      // M
-      'mahela jayawardene', 'makhaya ntini', 'mal loye', 'malcolm marshall', 'manoj prabhakar', 'manoj tiwary', 'marcus north', 'marcus trescothick', 'mark boucher', 'mark butcher', 'mark greatbatch', 'mark richardson', 'mark taylor', 'mark waugh', 'mark wood', 'marlon samuels', 'martin crowe', 'martin guptill', 'mashrafe mortaza', 'mathew sinclair', 'matthew hayden', 'matthew hoggard', 'matt henry', 'matt renshaw', 'maqsood ahmed', 'mayank agarwal', 'michael bevan', 'michael clarke', 'michael holding', 'michael hussey', 'michael kasprowicz', 'michael slater', 'michael vaughan', 'michael yardy', 'mick lewis', 'mickey arthur', 'migael pretorius', 'milton shumba', 'minhajul abedin', 'misbah-ul-haq', 'mitchell johnson', 'mitchell marsh', 'mitchell mcclenaghan', 'mitchell santner', 'mohammad abbas', 'mohammad amir', 'mohammad ashraful', 'mohammad hafeez', 'mohammad kaif', 'mohammad nabi', 'mohammad rizwan', 'mohammad sami', 'mohammad shahzad', 'mohammad shami', 'mohammad yousuf', 'mohinder amarnath', 'moin khan', 'monty panesar', 'morne morkel', 'mujeeb ur rahman', 'mushfiqur rahim', 'mustafizur rahman',
-      
-      // N
-      'naman ojha', 'nantie hayward', 'nathan astle', 'nathan bracken', 'nathan coulter-nile', 'nathan lyon', 'nathan mccullum', 'nayeem hasan', 'nayan mongia', 'neil harvey', 'neil johnson', 'neil mckenzie', 'neil wagner', 'nicky boje', 'nikhil chopra', 'niroshan dickwella', 'nitish rana', 'norman cowans', 'norman o\'neill', 'nuwan kulasekara', 'nuwan pradeep',
-      
-      // O
-      'obed mccoy', 'ollie pope', 'ollie robinson', 'oliver hannon-dalby', 'omar phillips', 'omari banks', 'nigel ormond', 'osanda fernando', 'oscar scott',
-      
-      // P
-      'paddy upton', 'pankaj singh', 'parthiv patel', 'pat cummins', 'pathum nissanka', 'patrick patterson', 'paul adams', 'paul collingwood', 'paul harris', 'paul reiffel', 'paul stirling', 'percy fender', 'peter handscomb', 'peter kirsten', 'peter nevill', 'peter siddle', 'peter taylor', 'phil defreitas', 'phil hughes', 'phil mustard', 'phillip simmons', 'pierre de bruyn', 'poonam yadav', 'prabath jayasuriya', 'pradeep sangwan', 'pragyam ojha', 'prashanth parameswaran', 'praveen kumar', 'prithvi shaw', 'cheteshwar pujara', 'puran nicholas',
-      
-      // Q
-      'qais ahmad', 'qasim umar', 'quinton de kock',
-      
-      // R
-      'rachael haynes', 'rachin ravindra', 'rahul dravid', 'rahul tripathi', 'rajat bhatia', 'rajesh chauhan', 'ramiz raja', 'ramesh powar', 'ramnaresh sarwan', 'rangana herath', 'rashid khan', 'rashid latif', 'rassie van der dussen', 'ravichandran ashwin', 'ravi bopara', 'ravi rampaul', 'ravindra jadeja', 'ray lindwall', 'raymond illingworth', 'reece topley', 'reeza hendricks', 'reginald duff', 'renuka singh', 'reon king', 'rex sellers', 'rhyse tait', 'richard hadlee', 'richard illingworth', 'ricky ponting', 'ridley jacobs', 'rilee rossouw', 'rob quiney', 'robiul islam', 'robin peterson', 'robin singh', 'robin uthappa', 'rodney hogg', 'rodney marsh', 'rohit sharma', 'romario shepherd', 'rory burns', 'ross taylor', 'roston chase', 'ruan de swardt', 'rudra pratap singh', 'rupesh amin', 'ryan harris', 'ryan sidebottom', 'ryan ten doeschate',
-      
-      // S
-      'saba karim', 'sabbir rahman', 'sachin tendulkar', 'saeed ajmal', 'saeed anwar', 'safyaan sharif', 'sagarika ghatge', 'shahid afridi', 'sajid khan', 'salim malik', 'salman butt', 'sam billings', 'sam curran', 'sam northeast', 'sam robson', 'samit patel', 'sanath jayasuriya', 'sandeep lamichhane', 'sandeep sharma', 'sanjay bangar', 'sanjay manjrekar', 'sarfraz ahmed', 'sarfraz nawaz', 'sarfaraz khan', 'saurabh tiwary', 'sourav ganguly', 'scott boland', 'scott styris', 'sean ervine', 'sean williams', 'shane bond', 'shane dowrich', 'shane warne', 'shane watson', 'shaun marsh', 'shaun pollock', 'shaun tait', 'shafali verma', 'shakib al hasan', 'mohammad shami', 'shane getkate', 'sharjeel khan', 'shaun udal', 'shreyas iyer', 'shubman gill', 'siddarth kaul', 'sikandar raza', 'simon doull', 'simon katich', 'simon kerrigan', 'simon taufel', 'simon topley', 'curtly ambrose', 'vivian richards', 'sohail khan', 'sohail tanvir', 'soumya sarkar', 'sourav ganguly', 'spencer johnson', 'spinett holgate', 'steve harmison', 'steve smith', 'steve waugh', 'steven finn', 'steven o\'keefe', 'stuart binny', 'stuart broad', 'stuart clark', 'stuart law', 'suranga lakmal', 'suresh raina', 'suryakumar yadav', 'syed anwar',
-      
-      // T
-      'tabraiz shamsi', 'tamim iqbal', 'tauseef ahmed', 'temba bavuma', 'tendai chatara', 'thami tsolekile', 'tharindu kaushal', 'theunis de bruyn', 'theo dorff', 'thomas odoyo', 'thushara mirando', 'tillakaratne dilshan', 'tim bresnan', 'tim may', 'tim paine', 'tim seifert', 'tim southee', 'tim van der gugten', 'tom blundell', 'tom latham', 'tom moody', 'tony greig', 'tony lock', 'trevor bayliss', 'trevor chappell', 'trent boult', 'marcus trescothick', 'trishan holder', 'trundel baer',
-      
-      // U
-      'umar akmal', 'umar amin', 'umar gul', 'unmukt chand', 'upul chandana', 'upul tharanga', 'usman afzaal', 'usman khawaja', 'usman salahuddin',
-      
-      // V
-      'chaminda vaas', 'valtteri wiggins', 'vvs laxman', 'varun aaron', 'varun chakravarthy', 'venkatesh iyer', 'venkatesh prasad', 'vernon philander', 'vidarbha ramesh', 'vijay hazare', 'vijay manjrekar', 'vijay merchant', 'vijay shankar', 'virat kohli', 'vinod kambli', 'vinoth kumar', 'vivek razdan',
-      
-      // W
-      'waqar younis', 'wahab riaz', 'wally hammond', 'walter hadlee', 'wasim akram', 'wasim jaffer', 'wayne parnell', 'wayne phillips', 'wesley barresi', 'wesley madhevere', 'will pucovski', 'william gilbert grace', 'william porterfield', 'will somerville',
-      
-      // X
-      'xavier doherty', 'xavier marshall',
-      
-      // Y
-      'yashasvi jaiswal', 'yasir arafat', 'yasir hameed', 'yasir shah', 'younis khan', 'yusuf pathan',
-      
-      // Z
-      'zaheer abbas', 'zaheer khan', 'zak crawley', 'zander de bruyn', 'zeeshan maqsood', 'zubair hamza', 'zulfiqar babar'
-    ];
-    
-    setIsValidating(false);
-    
-    // Exact match check (case insensitive)
-    const isValid = knownCricketers.includes(cleanName);
-    
-    return isValid;
-  };
-
-  const nextActivePlayer = () => {
-    const activePlayers = players.filter(p => !p.isEliminated);
-    if (activePlayers.length <= 1) {
-      // Game over - declare winner or end game
-      if (activePlayers.length === 1) {
-        const winner = activePlayers[0].name;
-        setGameWinner(winner);
-        setEliminatedMessage(`🎉 ${winner} wins the game!`);
-      } else {
-        setGameWinner('No Winner');
-        setEliminatedMessage('Game over - no players remaining!');
-      }
+  const handleConsiderMove = (accept: boolean) => {
+    if (isMultiplayer && roomId) {
+      socket.emit('gameAction', {
+        roomId,
+        action: 'voteConsideration',
+        payload: { accept }
+      }, (res: any) => {
+        if (res?.error) alert(res.error);
+      });
+      setShowConsiderDialog(false);
+      setPendingMove(null);
+      setCurrentInput('');
       return;
     }
-    
-    let nextIndex = (currentPlayerIndex + 1) % players.length;
-    while (players[nextIndex].isEliminated) {
-      nextIndex = (nextIndex + 1) % players.length;
-    }
-    setCurrentPlayerIndex(nextIndex);
-    setTurnTimer(30);
-  };
 
-  const handleConsiderMove = (accept: boolean) => {
+    // Local single player fallback
     if (!pendingMove) return;
-
     const move: GameMove = {
       player: players[currentPlayerIndex].name,
       cricketer: accept ? pendingMove.cricketer : `${pendingMove.cricketer} [REJECTED]`,
       letter: pendingMove.firstLetter,
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
       isValid: accept
     };
 
     setGameHistory(prev => [...prev, move]);
-
     if (accept) {
-      // Update score
-      setPlayers(prev => prev.map((player, index) => 
-        index === currentPlayerIndex 
-          ? { ...player, score: player.score + 1 }
-          : player
+      setPlayers(prev => prev.map((player, index) =>
+        index === currentPlayerIndex ? { ...player, score: player.score + 1 } : player
       ));
-      
-      // Set next required letter
       setRequiredLetter(pendingMove.lastLetter.toUpperCase());
-      nextActivePlayer();
-    } else {
-      // Move rejected, player loses turn but no timeout penalty
-      nextActivePlayer();
     }
-
+    nextLocalActivePlayer();
     setShowConsiderDialog(false);
     setPendingMove(null);
     setCurrentInput('');
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentInput.trim() || isValidating) return;
 
+    if (isMultiplayer && roomId) {
+      const activePlayer = players[currentPlayerIndex];
+      const isMyTurn = activePlayer && (activePlayer.userId === userId || activePlayer.name === username);
+      if (!isMyTurn) {
+        alert("Please wait for your turn!");
+        return;
+      }
+
+      setIsValidating(true);
+      socket.emit(
+        'gameAction',
+        {
+          roomId,
+          action: 'submitCricketer',
+          payload: { name: currentInput.trim(), userId }
+        },
+        (res: any) => {
+          setIsValidating(false);
+          if (res?.error) {
+            alert(res.error);
+          } else {
+            setCurrentInput('');
+          }
+        }
+      );
+      return;
+    }
+
+    // Local single player logic
     const cricketerName = currentInput.trim();
     const firstLetter = cricketerName.charAt(0).toLowerCase();
     const lastLetter = cricketerName.charAt(cricketerName.length - 1).toLowerCase();
 
-    // Check if it starts with required letter (if any)
     if (requiredLetter && firstLetter !== requiredLetter.toLowerCase()) {
       alert(`The cricketer's name must start with "${requiredLetter.toUpperCase()}"`);
       return;
     }
 
-    // Check if already used
-    const alreadyUsed = gameHistory.some(move => 
-      move.cricketer.toLowerCase() === cricketerName.toLowerCase()
+    const alreadyUsed = gameHistory.some(
+      move => move.cricketer.toLowerCase() === cricketerName.toLowerCase()
     );
-    
     if (alreadyUsed) {
       alert('This cricketer has already been named!');
       return;
     }
 
-    // Validate with "Google" (simulated)
-    const isValid = await validateCricketer(cricketerName);
-    
-    if (isValid) {
+    setIsValidating(true);
+    setTimeout(() => {
+      setIsValidating(false);
       const move: GameMove = {
         player: players[currentPlayerIndex].name,
         cricketer: cricketerName,
-        letter: firstLetter,
-        timestamp: new Date(),
+        letter: firstLetter.toUpperCase(),
+        timestamp: new Date().toISOString(),
         isValid: true
       };
-
-      setGameHistory([...gameHistory, move]);
-      
-      // Update score
-      setPlayers(prev => prev.map((player, index) => 
-        index === currentPlayerIndex 
-          ? { ...player, score: player.score + 1 }
-          : player
+      setGameHistory(prev => [...prev, move]);
+      setPlayers(prev => prev.map((player, index) =>
+        index === currentPlayerIndex ? { ...player, score: player.score + 1 } : player
       ));
-      
-      // Set next required letter
       setRequiredLetter(lastLetter.toUpperCase());
-      nextActivePlayer();
-    } else {
-      // Show consider dialog for invalid names
-      setPendingMove({
-        cricketer: cricketerName,
-        firstLetter,
-        lastLetter
-      });
-      setShowConsiderDialog(true);
-    }
-
-    if (isValid) {
+      nextLocalActivePlayer();
       setCurrentInput('');
+    }, 600);
+  };
+
+  const handleRestart = () => {
+    if (isMultiplayer && roomId) {
+      socket.emit('gameAction', { roomId, action: 'restartGame', payload: { userId } }, (res: any) => {
+        if (res?.error) alert(res.error);
+      });
+    } else {
+      setGameStarted(false);
+      setGameWinner('');
+      setGameHistory([]);
+      setRequiredLetter('');
+      setPlayers(prev => prev.map(p => ({ ...p, score: 0, timeoutCount: 0, isEliminated: false })));
     }
   };
 
@@ -408,7 +339,12 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  if (!gameStarted) {
+  const activePlayer = players[currentPlayerIndex];
+  const isMyTurn = isMultiplayer
+    ? activePlayer && (activePlayer.userId === userId || activePlayer.name === username)
+    : true;
+
+  if (!gameStarted && !isMultiplayer) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-purple-900">
         <header className="bg-white/95 backdrop-blur-sm shadow-lg border-b border-white/20">
@@ -419,12 +355,12 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
                 className="flex items-center space-x-2 text-slate-600 hover:text-orange-600 transition-colors duration-200"
               >
                 <ArrowLeft className="w-5 h-5" />
-                <span>{isMultiplayer ? 'Back to Room' : 'Back to Games'}</span>
+                <span>Back to Games</span>
               </button>
               <div className="flex items-center space-x-3">
                 <Trophy className="w-6 h-6 text-orange-600" />
                 <h1 className="text-xl font-bold bg-gradient-to-r from-orange-600 to-purple-600 bg-clip-text text-transparent">
-                  Cricketers Atlas {isMultiplayer && roomId && <span className="text-sm font-normal">({roomId})</span>}
+                  Cricketers Atlas
                 </h1>
               </div>
             </div>
@@ -436,19 +372,12 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
             <div className="text-center mb-8">
               <Trophy className="w-16 h-16 text-orange-600 mx-auto mb-4" />
               <h2 className="text-3xl font-bold text-slate-900 mb-2">Cricketers Atlas</h2>
-              {isMultiplayer && (
-                <div className="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
-                  <p className="text-purple-800 font-medium">Multiplayer Room: {roomId}</p>
-                  <p className="text-sm text-purple-600">Playing with friends online!</p>
-                </div>
-              )}
               <p className="text-slate-600 max-w-2xl mx-auto">
-                Name cricketers in alphabetical chain! Each player must name a cricketer starting 
+                Name cricketers in an alphabetical chain! Each player must name a cricketer starting
                 with the last letter of the previous cricketer's name.
               </p>
             </div>
 
-            {!isMultiplayer && (
             <div className="mb-8">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-slate-900">Players ({players.length}/6)</h3>
@@ -463,7 +392,7 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                {players.map((player, index) => (
+                {players.map(player => (
                   <div key={player.id} className="flex items-center space-x-3 p-3 bg-orange-50 rounded-lg border border-orange-200">
                     <div className="w-10 h-10 bg-gradient-to-r from-orange-500 to-purple-600 rounded-full flex items-center justify-center shadow-lg">
                       <span className="text-white font-semibold">{player.name.charAt(0)}</span>
@@ -482,10 +411,10 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
                     <input
                       type="text"
                       value={newPlayerName}
-                      onChange={(e) => setNewPlayerName(e.target.value)}
+                      onChange={e => setNewPlayerName(e.target.value)}
                       placeholder="Enter player name..."
                       className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
-                      onKeyPress={(e) => e.key === 'Enter' && addPlayer()}
+                      onKeyDown={e => e.key === 'Enter' && addPlayer()}
                     />
                     <button
                       onClick={addPlayer}
@@ -503,7 +432,6 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
                 </div>
               )}
             </div>
-            )}
 
             <div className="text-center">
               <button
@@ -532,7 +460,7 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
               <ArrowLeft className="w-5 h-5" />
               <span>Back to Games</span>
             </button>
-            
+
             <div className="flex items-center space-x-6">
               <div className="flex items-center space-x-2">
                 <Clock className="w-5 h-5 text-slate-300" />
@@ -543,9 +471,9 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
                 <span className="text-white">{players.length} players</span>
               </div>
               {isMultiplayer && roomId && (
-                <div className="flex items-center space-x-2">
-                  <Wifi className="w-5 h-5 text-purple-400" />
-                  <span className="text-purple-400 font-medium">{roomId}</span>
+                <div className="flex items-center space-x-2 bg-purple-500/20 px-3 py-1 rounded-full border border-purple-400/30">
+                  <Wifi className="w-4 h-4 text-purple-300 animate-pulse" />
+                  <span className="text-purple-200 font-mono text-sm">{roomId}</span>
                 </div>
               )}
             </div>
@@ -561,36 +489,47 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
             <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-6 border border-white/20">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center space-x-3">
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                    gameWinner ? 'bg-gradient-to-r from-yellow-500 to-orange-500' : 'bg-gradient-to-r from-orange-500 to-purple-600'
-                  }`}>
-                    <span className="text-white font-bold">{players[currentPlayerIndex].name.charAt(0)}</span>
+                  <div
+                    className={`w-12 h-12 rounded-full flex items-center justify-center shadow-md ${
+                      gameWinner
+                        ? 'bg-gradient-to-r from-yellow-500 to-orange-500'
+                        : 'bg-gradient-to-r from-orange-500 to-purple-600'
+                    }`}
+                  >
+                    <span className="text-white font-bold">
+                      {activePlayer ? activePlayer.name.charAt(0) : '?'}
+                    </span>
                   </div>
                   <div>
-                    <h3 className="text-lg font-semibold text-slate-900">
-                      {gameWinner ? `Game Over - ${gameWinner} Wins!` : `${players[currentPlayerIndex].name}'s Turn`}
+                    <h3 className="text-lg font-bold text-slate-900">
+                      {gameWinner
+                        ? `Game Over - ${gameWinner} Wins!`
+                        : isMyTurn
+                        ? `Your Turn, ${username}!`
+                        : `${activePlayer?.name}'s Turn`}
                     </h3>
                     {requiredLetter && !gameWinner && (
                       <p className="text-sm text-slate-600">
-                        Name a cricketer starting with <span className="font-bold text-orange-600">"{requiredLetter}"</span>
+                        Name a cricketer starting with{' '}
+                        <span className="font-black text-xl text-orange-600">"{requiredLetter}"</span>
                       </p>
                     )}
-                    {players[currentPlayerIndex].timeoutCount > 0 && !gameWinner && (
+                    {activePlayer && activePlayer.timeoutCount > 0 && !gameWinner && (
                       <p className="text-xs text-orange-600 font-medium">
-                        ⚠️ Timeouts: {players[currentPlayerIndex].timeoutCount}/2
+                        ⚠️ Timeouts: {activePlayer.timeoutCount}/2
                       </p>
                     )}
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className={`text-2xl font-bold ${
-                    gameWinner ? 'text-yellow-600' : turnTimer <= 10 ? 'text-red-600' : 'text-orange-600'
-                  }`}>
+                  <div
+                    className={`text-2xl font-black ${
+                      gameWinner ? 'text-yellow-600' : turnTimer <= 10 ? 'text-red-600 animate-pulse' : 'text-orange-600'
+                    }`}
+                  >
                     {gameWinner ? '🏆' : `${turnTimer}s`}
                   </div>
-                  <div className="text-xs text-slate-500">
-                    {gameWinner ? 'Winner!' : 'Time left'}
-                  </div>
+                  <div className="text-xs text-slate-500">{gameWinner ? 'Winner!' : 'Time left'}</div>
                 </div>
               </div>
 
@@ -600,14 +539,20 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
                     <input
                       type="text"
                       value={currentInput}
-                      onChange={(e) => setCurrentInput(e.target.value)}
-                      placeholder={requiredLetter ? `Cricketer starting with "${requiredLetter}"...` : "Enter cricketer name..."}
-                      className="flex-1 px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-lg"
-                      disabled={isValidating}
+                      onChange={e => setCurrentInput(e.target.value)}
+                      placeholder={
+                        isMyTurn
+                          ? requiredLetter
+                            ? `Cricketer starting with "${requiredLetter}"...`
+                            : 'Enter cricketer name...'
+                          : `Waiting for ${activePlayer?.name} to answer...`
+                      }
+                      className="flex-1 px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-lg disabled:bg-slate-100"
+                      disabled={isValidating || !isMyTurn}
                     />
                     <button
                       type="submit"
-                      disabled={!currentInput.trim() || isValidating}
+                      disabled={!currentInput.trim() || isValidating || !isMyTurn}
                       className="px-6 py-3 bg-gradient-to-r from-orange-600 to-purple-600 text-white rounded-lg font-semibold hover:from-orange-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 flex items-center space-x-2"
                     >
                       {isValidating ? (
@@ -620,6 +565,11 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
                       )}
                     </button>
                   </div>
+                  {!isMyTurn && (
+                    <p className="text-xs text-slate-500 italic">
+                      It is {activePlayer?.name}'s turn to submit a cricketer.
+                    </p>
+                  )}
                 </form>
               )}
 
@@ -636,7 +586,7 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
                       Back to Games
                     </button>
                     <button
-                      onClick={() => window.location.reload()}
+                      onClick={handleRestart}
                       className="px-6 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-colors duration-200"
                     >
                       Play Again
@@ -648,39 +598,36 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
 
             {/* Consider Dialog */}
             {showConsiderDialog && pendingMove && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                <div className="bg-white rounded-xl shadow-2xl p-6 max-w-md w-full mx-4">
+              <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full">
                   <div className="text-center mb-6">
-                    <div className="w-16 h-16 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <div className="w-16 h-16 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow">
                       <span className="text-2xl">🤔</span>
                     </div>
                     <h3 className="text-xl font-bold text-gray-900 mb-2">Consider This Name?</h3>
                     <p className="text-gray-600 mb-4">
-                      "<span className="font-semibold text-orange-600">{pendingMove.cricketer}</span>" is not in our official list.
+                      "<span className="font-semibold text-orange-600">{pendingMove.cricketer}</span>" is not in our
+                      verified list.
                     </p>
                     <p className="text-sm text-gray-500">
-                      Should we accept this name and continue the game?
+                      Should this cricketer be accepted to continue the game?
                     </p>
                   </div>
-                  
+
                   <div className="flex space-x-3">
                     <button
                       onClick={() => handleConsiderMove(true)}
-                      className="flex-1 px-4 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors duration-200"
+                      className="flex-1 px-4 py-3 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition-colors duration-200"
                     >
                       ✓ Accept
                     </button>
                     <button
                       onClick={() => handleConsiderMove(false)}
-                      className="flex-1 px-4 py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors duration-200"
+                      className="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors duration-200"
                     >
                       ✗ Reject
                     </button>
                   </div>
-                  
-                  <p className="text-xs text-gray-400 text-center mt-3">
-                    This decision will be logged in the game history
-                  </p>
                 </div>
               </div>
             )}
@@ -696,60 +643,70 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
             )}
 
             {/* Game History */}
-            <div className="bg-white rounded-xl shadow-lg border border-green-100">
+            <div className="bg-white/95 rounded-xl shadow-lg border border-white/20">
               <div className="p-6 border-b border-gray-200">
                 <h3 className="text-lg font-semibold text-gray-900">Game History</h3>
               </div>
               <div className="p-6 max-h-96 overflow-y-auto">
                 {gameHistory.length === 0 ? (
-                  <p className="text-gray-500 text-center py-8">No moves yet. Start the game!</p>
+                  <p className="text-gray-500 text-center py-8">No moves yet. Start the chain!</p>
                 ) : (
                   <div className="space-y-3">
-                    {gameHistory.slice().reverse().map((move, index) => (
-                      <div key={index} className={`flex items-center justify-between p-3 rounded-lg ${
-                        move.cricketer.includes('[ELIMINATED') 
-                          ? 'bg-red-50 border border-red-200' 
-                          : move.cricketer.includes('[REJECTED')
-                          ? 'bg-orange-50 border border-orange-200'
-                          : 'bg-gray-50'
-                      }`}>
-                        <div className="flex items-center space-x-3">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                            move.cricketer.includes('[ELIMINATED') 
-                              ? 'bg-gradient-to-r from-red-500 to-red-600' 
-                              : move.cricketer.includes('[REJECTED')
-                              ? 'bg-gradient-to-r from-orange-500 to-orange-600'
-                              : 'bg-gradient-to-r from-green-500 to-emerald-500'
-                          }`}>
-                            <span className="text-white text-sm font-semibold">{move.player.charAt(0)}</span>
+                    {gameHistory
+                      .slice()
+                      .reverse()
+                      .map((move, index) => {
+                        const isElim = move.cricketer.includes('[ELIMINATED');
+                        const isRej = move.cricketer.includes('[REJECTED');
+                        const timeStr = typeof move.timestamp === 'string'
+                          ? new Date(move.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                          : new Date().toLocaleTimeString();
+
+                        return (
+                          <div
+                            key={index}
+                            className={`flex items-center justify-between p-3 rounded-lg ${
+                              isElim
+                                ? 'bg-red-50 border border-red-200'
+                                : isRej
+                                ? 'bg-orange-50 border border-orange-200'
+                                : 'bg-gray-50'
+                            }`}
+                          >
+                            <div className="flex items-center space-x-3">
+                              <div
+                                className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                                  isElim
+                                    ? 'bg-gradient-to-r from-red-500 to-red-600'
+                                    : isRej
+                                    ? 'bg-gradient-to-r from-orange-500 to-orange-600'
+                                    : 'bg-gradient-to-r from-green-500 to-emerald-500'
+                                }`}
+                              >
+                                <span className="text-white text-sm font-semibold">{move.player.charAt(0)}</span>
+                              </div>
+                              <div>
+                                <p
+                                  className={`font-medium ${
+                                    isElim ? 'text-red-800' : isRej ? 'text-orange-800' : 'text-gray-900'
+                                  }`}
+                                >
+                                  {move.cricketer}
+                                </p>
+                                <p className="text-sm text-gray-600">by {move.player}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              {isElim || isRej ? (
+                                <XCircle className="w-5 h-5 text-red-600" />
+                              ) : (
+                                <CheckCircle className="w-5 h-5 text-green-600" />
+                              )}
+                              <span className="text-xs text-gray-500">{timeStr}</span>
+                            </div>
                           </div>
-                          <div>
-                            <p className={`font-medium ${
-                              move.cricketer.includes('[ELIMINATED') ? 'text-red-800' : 
-                              move.cricketer.includes('[REJECTED') ? 'text-orange-800' :
-                              'text-gray-900'
-                            }`}>
-                              {move.cricketer}
-                            </p>
-                            <p className="text-sm text-gray-600">by {move.player}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          {move.cricketer.includes('[ELIMINATED') ? (
-                            <XCircle className="w-5 h-5 text-red-600" />
-                          ) : move.cricketer.includes('[REJECTED') ? (
-                            <XCircle className="w-5 h-5 text-orange-600" />
-                          ) : move.isValid ? (
-                            <CheckCircle className="w-5 h-5 text-green-600" />
-                          ) : (
-                            <XCircle className="w-5 h-5 text-red-600" />
-                          )}
-                          <span className="text-xs text-gray-500">
-                            {move.timestamp.toLocaleTimeString()}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
+                        );
+                      })}
                   </div>
                 )}
               </div>
@@ -757,64 +714,80 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
           </div>
 
           {/* Scoreboard */}
-          <div className="bg-white rounded-xl shadow-lg border border-green-100">
+          <div className="bg-white/95 rounded-xl shadow-lg border border-white/20">
             <div className="p-6 border-b border-gray-200">
               <h3 className="text-lg font-semibold text-gray-900">Scoreboard</h3>
             </div>
             <div className="p-6">
               <div className="space-y-4">
                 {players
+                  .slice()
                   .sort((a, b) => b.score - a.score)
-                  .map((player, index) => (
-                    <div
-                      key={player.id}
-                      className={`flex items-center justify-between p-3 rounded-lg ${
-                        player.isEliminated
-                          ? 'bg-red-100 border-2 border-red-300 opacity-60'
-                          : gameWinner && player.name === gameWinner
-                          ? 'bg-yellow-100 border-2 border-yellow-400'
-                          : player.name === players[currentPlayerIndex].name
-                          ? 'bg-green-100 border-2 border-green-300'
-                          : 'bg-gray-50'
-                      }`}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <div className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
-                          player.isEliminated ? 'bg-red-300 text-red-800' : 
-                          gameWinner && player.name === gameWinner ? 'bg-yellow-400 text-yellow-800' :
-                          'bg-gray-300'
-                        }`}>
-                          {gameWinner && player.name === gameWinner ? '👑' : index + 1}
-                        </div>
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                          player.isEliminated 
-                            ? 'bg-gradient-to-r from-red-500 to-red-600' 
+                  .map((player, index) => {
+                    const isCurr = activePlayer && player.name === activePlayer.name;
+                    return (
+                      <div
+                        key={player.userId || player.id}
+                        className={`flex items-center justify-between p-3 rounded-lg ${
+                          player.isEliminated
+                            ? 'bg-red-100 border-2 border-red-300 opacity-60'
                             : gameWinner && player.name === gameWinner
-                            ? 'bg-gradient-to-r from-yellow-500 to-orange-500'
-                            : 'bg-gradient-to-r from-green-500 to-emerald-500'
-                        }`}>
-                          <span className="text-white text-sm font-semibold">{player.name.charAt(0)}</span>
+                            ? 'bg-yellow-100 border-2 border-yellow-400'
+                            : isCurr
+                            ? 'bg-green-100 border-2 border-green-300'
+                            : 'bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex items-center space-x-3">
+                          <div
+                            className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
+                              player.isEliminated
+                                ? 'bg-red-300 text-red-800'
+                                : gameWinner && player.name === gameWinner
+                                ? 'bg-yellow-400 text-yellow-800'
+                                : 'bg-gray-300'
+                            }`}
+                          >
+                            {gameWinner && player.name === gameWinner ? '👑' : index + 1}
+                          </div>
+                          <div
+                            className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                              player.isEliminated
+                                ? 'bg-gradient-to-r from-red-500 to-red-600'
+                                : gameWinner && player.name === gameWinner
+                                ? 'bg-gradient-to-r from-yellow-500 to-orange-500'
+                                : 'bg-gradient-to-r from-green-500 to-emerald-500'
+                            }`}
+                          >
+                            <span className="text-white text-sm font-semibold">{player.name.charAt(0)}</span>
+                          </div>
+                          <div>
+                            <span className={`font-medium ${player.isEliminated ? 'text-red-800' : 'text-gray-900'}`}>
+                              {player.name}
+                              {player.isEliminated && <span className="text-xs ml-1">(Eliminated)</span>}
+                              {gameWinner && player.name === gameWinner && (
+                                <span className="text-xs ml-1 text-yellow-600 font-bold">(Winner!)</span>
+                              )}
+                            </span>
+                            {player.timeoutCount > 0 && !player.isEliminated && (
+                              <p className="text-xs text-orange-600">Timeouts: {player.timeoutCount}/2</p>
+                            )}
+                          </div>
                         </div>
-                        <div>
-                          <span className={`font-medium ${player.isEliminated ? 'text-red-800' : 'text-gray-900'}`}>
-                            {player.name}
-                            {player.isEliminated && <span className="text-xs ml-1">(Eliminated)</span>}
-                            {gameWinner && player.name === gameWinner && <span className="text-xs ml-1 text-yellow-600">(Winner!)</span>}
-                          </span>
-                          {player.timeoutCount > 0 && !player.isEliminated && (
-                            <p className="text-xs text-orange-600">Timeouts: {player.timeoutCount}/2</p>
-                          )}
+                        <div
+                          className={`text-lg font-bold ${
+                            player.isEliminated
+                              ? 'text-red-600'
+                              : gameWinner && player.name === gameWinner
+                              ? 'text-yellow-600'
+                              : 'text-green-600'
+                          }`}
+                        >
+                          {player.score}
                         </div>
                       </div>
-                      <div className={`text-lg font-bold ${
-                        player.isEliminated ? 'text-red-600' : 
-                        gameWinner && player.name === gameWinner ? 'text-yellow-600' :
-                        'text-green-600'
-                      }`}>
-                        {player.score}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
               </div>
             </div>
           </div>

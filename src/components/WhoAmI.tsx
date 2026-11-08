@@ -1,9 +1,25 @@
-import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Users, MessageCircle, Send, Eye, EyeOff, Crown, Target, Clock, Star, ThumbsUp, ThumbsDown, HelpCircle, Minus } from 'lucide-react';
-import MultiplayerManager from '../utils/multiplayer';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  ArrowLeft,
+  Users,
+  MessageCircle,
+  Send,
+  Eye,
+  EyeOff,
+  Crown,
+  Target,
+  Star,
+  ThumbsUp,
+  ThumbsDown,
+  HelpCircle,
+  Minus,
+  Wifi
+} from 'lucide-react';
+import { socket, getUserId } from '../socket';
 
 interface Player {
   id: string;
+  userId?: string;
   name: string;
   score: number;
   isActive: boolean;
@@ -14,13 +30,13 @@ interface ChatMessage {
   id: string;
   player: string;
   message: string;
-  timestamp: Date;
+  timestamp: string | Date;
   type: 'question' | 'answer' | 'guess' | 'system';
-  response?: 'yes' | 'no' | 'maybe-yes' | 'maybe-no' | 'not-sure';
+  response?: 'yes' | 'no' | 'maybe-yes' | 'maybe-no' | 'not-sure' | null;
 }
 
 interface Celebrity {
-  id: string;
+  id?: string;
   name: string;
   category: string;
   difficulty: 'Easy' | 'Medium' | 'Hard';
@@ -33,12 +49,16 @@ interface WhoAmIProps {
 }
 
 const WhoAmI: React.FC<WhoAmIProps> = ({ onBack, username, roomId }) => {
+  const userId = getUserId();
+  const isMultiplayer = !!roomId;
+
   const [players, setPlayers] = useState<Player[]>([
-    { id: '1', name: username, score: 0, isActive: true, guessesLeft: 3 }
+    { id: '1', userId, name: username, score: 0, isActive: true, guessesLeft: 3 }
   ]);
   const [currentPlayerIndex, setCurrentPlayerIndex] = useState(0);
   const [gameStarted, setGameStarted] = useState(false);
   const [currentCelebrity, setCurrentCelebrity] = useState<Celebrity | null>(null);
+  const [showCelebrityName, setShowCelebrityName] = useState(false);
   const [questionsAsked, setQuestionsAsked] = useState(0);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [newQuestion, setNewQuestion] = useState('');
@@ -46,170 +66,171 @@ const WhoAmI: React.FC<WhoAmIProps> = ({ onBack, username, roomId }) => {
   const [gameRound, setGameRound] = useState(1);
   const [newPlayerName, setNewPlayerName] = useState('');
   const [showAddPlayer, setShowAddPlayer] = useState(false);
-  const [gameWinner, setGameWinner] = useState<string>('');
-  const [isMultiplayer, setIsMultiplayer] = useState(false);
-  const [multiplayerManager] = useState(() => MultiplayerManager.getInstance());
-  const [showCelebrityName, setShowCelebrityName] = useState(false);
+  const [difficulty, setDifficulty] = useState<string>('Easy');
+  const [category, setCategory] = useState<string>('');
 
-  // Celebrity database
-  const celebrities: Celebrity[] = [
-    // Bollywood Actors
-    { id: '1', name: 'Shah Rukh Khan', category: 'Bollywood Actor', difficulty: 'Easy' },
-    { id: '2', name: 'Salman Khan', category: 'Bollywood Actor', difficulty: 'Easy' },
-    { id: '3', name: 'Aamir Khan', category: 'Bollywood Actor', difficulty: 'Easy' },
-    { id: '4', name: 'Akshay Kumar', category: 'Bollywood Actor', difficulty: 'Easy' },
-    { id: '5', name: 'Ranveer Singh', category: 'Bollywood Actor', difficulty: 'Medium' },
-    { id: '6', name: 'Ranbir Kapoor', category: 'Bollywood Actor', difficulty: 'Medium' },
-    { id: '7', name: 'Varun Dhawan', category: 'Bollywood Actor', difficulty: 'Medium' },
-    { id: '8', name: 'Rajkummar Rao', category: 'Bollywood Actor', difficulty: 'Hard' },
-    
-    // Bollywood Actresses
-    { id: '9', name: 'Deepika Padukone', category: 'Bollywood Actress', difficulty: 'Easy' },
-    { id: '10', name: 'Priyanka Chopra', category: 'Bollywood Actress', difficulty: 'Easy' },
-    { id: '11', name: 'Kareena Kapoor', category: 'Bollywood Actress', difficulty: 'Easy' },
-    { id: '12', name: 'Alia Bhatt', category: 'Bollywood Actress', difficulty: 'Medium' },
-    { id: '13', name: 'Katrina Kaif', category: 'Bollywood Actress', difficulty: 'Medium' },
-    { id: '14', name: 'Anushka Sharma', category: 'Bollywood Actress', difficulty: 'Medium' },
-    { id: '15', name: 'Kriti Sanon', category: 'Bollywood Actress', difficulty: 'Hard' },
-    
-    // Cricketers
-    { id: '16', name: 'Virat Kohli', category: 'Cricketer', difficulty: 'Easy' },
-    { id: '17', name: 'MS Dhoni', category: 'Cricketer', difficulty: 'Easy' },
-    { id: '18', name: 'Rohit Sharma', category: 'Cricketer', difficulty: 'Easy' },
-    { id: '19', name: 'Hardik Pandya', category: 'Cricketer', difficulty: 'Medium' },
-    { id: '20', name: 'KL Rahul', category: 'Cricketer', difficulty: 'Medium' },
-    { id: '21', name: 'Jasprit Bumrah', category: 'Cricketer', difficulty: 'Hard' },
-    
-    // Singers
-    { id: '22', name: 'Arijit Singh', category: 'Singer', difficulty: 'Easy' },
-    { id: '23', name: 'Shreya Ghoshal', category: 'Singer', difficulty: 'Easy' },
-    { id: '24', name: 'Armaan Malik', category: 'Singer', difficulty: 'Medium' },
-    { id: '25', name: 'Neha Kakkar', category: 'Singer', difficulty: 'Medium' },
-    { id: '26', name: 'Rahat Fateh Ali Khan', category: 'Singer', difficulty: 'Hard' },
-    
-    // Directors
-    { id: '27', name: 'Karan Johar', category: 'Director', difficulty: 'Medium' },
-    { id: '28', name: 'Rohit Shetty', category: 'Director', difficulty: 'Medium' },
-    { id: '29', name: 'Sanjay Leela Bhansali', category: 'Director', difficulty: 'Hard' },
-    
-    // Sports
-    { id: '30', name: 'PV Sindhu', category: 'Badminton Player', difficulty: 'Medium' },
-    { id: '31', name: 'Mary Kom', category: 'Boxer', difficulty: 'Medium' },
-    { id: '32', name: 'Neeraj Chopra', category: 'Javelin Thrower', difficulty: 'Hard' },
-    
-    // Influencers/YouTubers
-    { id: '33', name: 'CarryMinati', category: 'YouTuber', difficulty: 'Medium' },
-    { id: '34', name: 'Bhuvan Bam', category: 'YouTuber', difficulty: 'Medium' },
-    { id: '35', name: 'Ashish Chanchlani', category: 'YouTuber', difficulty: 'Hard' }
+  const chatRef = useRef<HTMLDivElement | null>(null);
+
+  // Local celebrity database for single player fallback
+  const localCelebrities: Celebrity[] = [
+    { name: 'Shah Rukh Khan', category: 'Bollywood Actor', difficulty: 'Easy' },
+    { name: 'Salman Khan', category: 'Bollywood Actor', difficulty: 'Easy' },
+    { name: 'Aamir Khan', category: 'Bollywood Actor', difficulty: 'Easy' },
+    { name: 'Deepika Padukone', category: 'Bollywood Actress', difficulty: 'Easy' },
+    { name: 'Virat Kohli', category: 'Cricketer', difficulty: 'Easy' },
+    { name: 'MS Dhoni', category: 'Cricketer', difficulty: 'Easy' },
+    { name: 'Arijit Singh', category: 'Singer', difficulty: 'Easy' },
+    { name: 'Ranveer Singh', category: 'Bollywood Actor', difficulty: 'Medium' },
+    { name: 'Alia Bhatt', category: 'Bollywood Actress', difficulty: 'Medium' },
+    { name: 'PV Sindhu', category: 'Badminton Player', difficulty: 'Medium' },
+    { name: 'Neeraj Chopra', category: 'Javelin Thrower', difficulty: 'Hard' }
   ];
 
-  // Initialize multiplayer mode if roomId is provided
+  // ---------------- MULTIPLAYER SYNC ----------------
   useEffect(() => {
-    if (roomId) {
-      setIsMultiplayer(true);
-      
-      const room = multiplayerManager.getRoom(roomId);
-      if (room) {
-        const roomPlayers: Player[] = room.players.map((playerName: string, index: number) => ({
-          id: (index + 1).toString(),
-          name: playerName,
+    if (!isMultiplayer || !roomId) return;
+
+    socket.emit('joinGame', { roomId, userId }, (res: any) => {
+      if (res?.error) console.warn('joinGame error:', res.error);
+    });
+
+    const handleGameState = (payload: any) => {
+      if (payload.gameKey !== 'WhoAmI') return;
+      const s = payload.state;
+      if (!s) return;
+
+      setPlayers(s.players || []);
+      setCurrentPlayerIndex(s.currentPlayerIndex ?? 0);
+      setQuestionsAsked(s.questionsAsked ?? 0);
+      setGameRound(s.gameRound ?? 1);
+      setChatMessages(s.chatMessages || []);
+      setDifficulty(s.difficulty || 'Easy');
+      setCategory(s.category || '');
+      setGameStarted(true);
+
+      if (s.revealedCelebrity) {
+        setCurrentCelebrity(s.revealedCelebrity);
+        setShowCelebrityName(true);
+      }
+    };
+
+    const handlePrivateState = (payload: any) => {
+      if (payload.gameKey !== 'WhoAmI') return;
+      if (payload.holderData?.celebrity) {
+        setCurrentCelebrity(payload.holderData.celebrity);
+      }
+    };
+
+    socket.on('gameStateUpdate', handleGameState);
+    socket.on('privateStateUpdate', handlePrivateState);
+
+    // Initial private data fetch
+    socket.emit('gameAction', { roomId, action: 'getPrivateData', payload: { userId } }, (res: any) => {
+      if (res?.data?.celebrity) setCurrentCelebrity(res.data.celebrity);
+    });
+
+    return () => {
+      socket.off('gameStateUpdate', handleGameState);
+      socket.off('privateStateUpdate', handlePrivateState);
+    };
+  }, [isMultiplayer, roomId, userId]);
+
+  useEffect(() => {
+    chatRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
+
+  const addLocalPlayer = () => {
+    if (newPlayerName.trim() && players.length < 8) {
+      setPlayers(prev => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          userId: 'user-' + Date.now(),
+          name: newPlayerName.trim(),
           score: 0,
           isActive: true,
           guessesLeft: 3
-        }));
-        setPlayers(roomPlayers);
-        
-        const handleRoomUpdate = (updatedRoom: any) => {
-          const updatedPlayers: Player[] = updatedRoom.players.map((playerName: string, index: number) => ({
-            id: (index + 1).toString(),
-            name: playerName,
-            score: 0,
-            isActive: true,
-            guessesLeft: 3
-          }));
-          setPlayers(updatedPlayers);
-        };
-        
-        multiplayerManager.on(`room:${roomId}`, handleRoomUpdate);
-        
-        return () => {
-          multiplayerManager.off(`room:${roomId}`, handleRoomUpdate);
-        };
-      }
-    }
-  }, [roomId, username, multiplayerManager]);
-
-  const addPlayer = () => {
-    if (newPlayerName.trim() && players.length < 8) {
-      const newPlayer: Player = {
-        id: Date.now().toString(),
-        name: newPlayerName.trim(),
-        score: 0,
-        isActive: true,
-        guessesLeft: 3
-      };
-      setPlayers([...players, newPlayer]);
+        }
+      ]);
       setNewPlayerName('');
       setShowAddPlayer(false);
     }
   };
 
-  const removePlayer = (playerId: string) => {
+  const removeLocalPlayer = (id: string) => {
     if (players.length > 1) {
-      setPlayers(players.filter(p => p.id !== playerId));
+      setPlayers(prev => prev.filter(p => p.id !== id));
     }
   };
 
-  const startGame = () => {
+  const startLocalGame = () => {
     if (players.length >= 2) {
       setGameStarted(true);
       setGameRound(1);
-      generateNewCelebrity();
+      const random = localCelebrities[Math.floor(Math.random() * localCelebrities.length)];
+      setCurrentCelebrity(random);
+      setShowCelebrityName(false);
       setQuestionsAsked(0);
-      setChatMessages([]);
-      
-      // Add welcome message
-      const welcomeMessage: ChatMessage = {
-        id: Date.now().toString(),
-        player: 'System',
-        message: `🎭 Round ${gameRound} started! ${players[currentPlayerIndex].name} has the celebrity name. Others can ask up to 20 Yes/No questions and have 3 guesses each!`,
-        timestamp: new Date(),
-        type: 'system'
-      };
-      setChatMessages([welcomeMessage]);
+      setChatMessages([
+        {
+          id: Date.now().toString(),
+          player: 'System',
+          message: `🎭 Round 1 started! ${players[0].name} has the celebrity name. Others ask Yes/No questions and have 3 guesses each!`,
+          timestamp: new Date().toISOString(),
+          type: 'system'
+        }
+      ]);
     }
   };
 
-  const generateNewCelebrity = () => {
-    const randomCelebrity = celebrities[Math.floor(Math.random() * celebrities.length)];
-    setCurrentCelebrity(randomCelebrity);
-    setShowCelebrityName(false);
-  };
-
-  const sendQuestion = (e: React.FormEvent) => {
-    e.preventDefault();
+  const sendQuestion = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!newQuestion.trim() || questionsAsked >= 20) return;
 
-    const questionMessage: ChatMessage = {
-      id: Date.now().toString(),
-      player: username,
-      message: newQuestion.trim(),
-      timestamp: new Date(),
-      type: 'question'
-    };
+    if (isMultiplayer && roomId) {
+      socket.emit('gameAction', {
+        roomId,
+        action: 'askQuestion',
+        payload: { question: newQuestion.trim(), userId }
+      }, (res: any) => {
+        if (res?.error) alert(res.error);
+        else setNewQuestion('');
+      });
+      return;
+    }
 
-    setChatMessages(prev => [...prev, questionMessage]);
+    setChatMessages(prev => [
+      ...prev,
+      {
+        id: Date.now().toString(),
+        player: username,
+        message: newQuestion.trim(),
+        timestamp: new Date().toISOString(),
+        type: 'question',
+        response: null
+      }
+    ]);
     setQuestionsAsked(prev => prev + 1);
     setNewQuestion('');
   };
 
   const respondToQuestion = (response: 'yes' | 'no' | 'maybe-yes' | 'maybe-no' | 'not-sure') => {
-    if (chatMessages.length === 0) return;
-    
-    const lastMessage = chatMessages[chatMessages.length - 1];
-    if (lastMessage.type !== 'question' || lastMessage.response) return;
+    if (isMultiplayer && roomId) {
+      socket.emit('gameAction', {
+        roomId,
+        action: 'answerQuestion',
+        payload: { response, userId }
+      }, (res: any) => {
+        if (res?.error) alert(res.error);
+      });
+      return;
+    }
 
-    const responseText = {
+    const lastIdx = [...chatMessages].reverse().findIndex(m => m.type === 'question' && !m.response);
+    if (lastIdx === -1) return;
+    const realIdx = chatMessages.length - 1 - lastIdx;
+
+    const answerText = {
       'yes': '✅ Yes',
       'no': '❌ No',
       'maybe-yes': '🤔 Maybe Yes',
@@ -217,132 +238,80 @@ const WhoAmI: React.FC<WhoAmIProps> = ({ onBack, username, roomId }) => {
       'not-sure': '❓ Not Sure'
     }[response];
 
-    const answerMessage: ChatMessage = {
-      id: Date.now().toString(),
-      player: players[currentPlayerIndex].name,
-      message: responseText,
-      timestamp: new Date(),
-      type: 'answer',
-      response
-    };
-
-    setChatMessages(prev => [...prev, answerMessage]);
+    setChatMessages(prev => {
+      const copy = [...prev];
+      copy[realIdx] = { ...copy[realIdx], response };
+      copy.push({
+        id: Date.now().toString(),
+        player: players[currentPlayerIndex]?.name || 'Host',
+        message: answerText,
+        timestamp: new Date().toISOString(),
+        type: 'answer',
+        response
+      });
+      return copy;
+    });
   };
 
-  const submitGuess = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newGuess.trim() || !currentCelebrity) return;
+  const submitGuess = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!newGuess.trim()) return;
 
-    const isCorrect = newGuess.toLowerCase().trim() === currentCelebrity.name.toLowerCase();
-    
-    const guessMessage: ChatMessage = {
-      id: Date.now().toString(),
-      player: username,
-      message: `🎯 Guess: ${newGuess.trim()}`,
-      timestamp: new Date(),
-      type: 'guess'
-    };
-
-    setChatMessages(prev => [...prev, guessMessage]);
-
-    if (isCorrect) {
-      // Correct guess - player wins points
-      setPlayers(prev => prev.map(player => 
-        player.name === username 
-          ? { ...player, score: player.score + getDifficultyPoints(currentCelebrity.difficulty) }
-          : player
-      ));
-
-      const winMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        player: 'System',
-        message: `🎉 ${username} guessed correctly! The answer was ${currentCelebrity.name}. +${getDifficultyPoints(currentCelebrity.difficulty)} points!`,
-        timestamp: new Date(),
-        type: 'system'
-      };
-
-      setChatMessages(prev => [...prev, winMessage]);
-      
-      setTimeout(() => {
-        nextRound();
-      }, 3000);
-    } else {
-      // Wrong guess - reduce guesses
-      setPlayers(prev => prev.map(player => 
-        player.name === username 
-          ? { ...player, guessesLeft: Math.max(0, player.guessesLeft - 1) }
-          : player
-      ));
-
-      const wrongMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        player: 'System',
-        message: `❌ Wrong guess! ${username} has ${Math.max(0, players.find(p => p.name === username)?.guessesLeft! - 1)} guesses left.`,
-        timestamp: new Date(),
-        type: 'system'
-      };
-
-      setChatMessages(prev => [...prev, wrongMessage]);
-
-      // Check if player is out of guesses
-      const currentPlayer = players.find(p => p.name === username);
-      if (currentPlayer && currentPlayer.guessesLeft <= 1) {
-        const eliminatedMessage: ChatMessage = {
-          id: (Date.now() + 2).toString(),
-          player: 'System',
-          message: `💔 ${username} is out of guesses!`,
-          timestamp: new Date(),
-          type: 'system'
-        };
-
-        setChatMessages(prev => [...prev, eliminatedMessage]);
-      }
+    if (isMultiplayer && roomId) {
+      socket.emit('gameAction', {
+        roomId,
+        action: 'makeGuess',
+        payload: { guess: newGuess.trim(), userId }
+      }, (res: any) => {
+        if (res?.error) alert(res.error);
+        else setNewGuess('');
+      });
+      return;
     }
 
+    // Local guess logic
+    if (!currentCelebrity) return;
+    const guessText = newGuess.trim();
+    const isCorrect = guessText.toLowerCase() === currentCelebrity.name.toLowerCase();
+
+    setChatMessages(prev => [
+      ...prev,
+      {
+        id: Date.now().toString(),
+        player: username,
+        message: `🎯 Guess: ${guessText}`,
+        timestamp: new Date().toISOString(),
+        type: 'guess'
+      }
+    ]);
+
+    if (isCorrect) {
+      const pts = currentCelebrity.difficulty === 'Easy' ? 1 : currentCelebrity.difficulty === 'Medium' ? 2 : 3;
+      setPlayers(prev => prev.map(p => p.name === username ? { ...p, score: p.score + pts } : p));
+      setChatMessages(prev => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          player: 'System',
+          message: `🎉 ${username} guessed correctly! The answer was ${currentCelebrity.name}. +${pts} points!`,
+          timestamp: new Date().toISOString(),
+          type: 'system'
+        }
+      ]);
+    } else {
+      setPlayers(prev => prev.map(p => p.name === username ? { ...p, guessesLeft: Math.max(0, p.guessesLeft - 1) } : p));
+    }
     setNewGuess('');
   };
 
-  const getDifficultyPoints = (difficulty: string) => {
-    switch (difficulty) {
-      case 'Easy': return 1;
-      case 'Medium': return 2;
-      case 'Hard': return 3;
-      default: return 1;
-    }
-  };
+  const currentHolder = players[currentPlayerIndex];
+  const isMeHolder = isMultiplayer
+    ? currentHolder && (currentHolder.userId === userId || currentHolder.name === username)
+    : currentHolder?.name === username;
 
-  const nextRound = () => {
-    setCurrentPlayerIndex((prev) => (prev + 1) % players.length);
-    setGameRound(prev => prev + 1);
-    generateNewCelebrity();
-    setQuestionsAsked(0);
-    setPlayers(prev => prev.map(p => ({ ...p, guessesLeft: 3 })));
-    setChatMessages([]);
-    
-    const newRoundMessage: ChatMessage = {
-      id: Date.now().toString(),
-      player: 'System',
-      message: `🎭 Round ${gameRound + 1} started! ${players[(currentPlayerIndex + 1) % players.length].name} has the new celebrity name!`,
-      timestamp: new Date(),
-      type: 'system'
-    };
-    setChatMessages([newRoundMessage]);
-  };
+  const myGuessesLeft = players.find(p => p.userId === userId || p.name === username)?.guessesLeft ?? 3;
 
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
-
-  const getDifficultyColor = (difficulty: string) => {
-    switch (difficulty) {
-      case 'Easy': return 'from-green-400 to-green-500';
-      case 'Medium': return 'from-yellow-400 to-orange-500';
-      case 'Hard': return 'from-red-500 to-purple-600';
-      default: return 'from-gray-400 to-gray-500';
-    }
-  };
-
-  if (!gameStarted) {
+  if (!gameStarted && !isMultiplayer) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-purple-900">
         <header className="bg-white/95 backdrop-blur-sm shadow-lg border-b border-white/20">
@@ -353,12 +322,12 @@ const WhoAmI: React.FC<WhoAmIProps> = ({ onBack, username, roomId }) => {
                 className="flex items-center space-x-2 text-slate-600 hover:text-orange-600 transition-colors duration-200"
               >
                 <ArrowLeft className="w-5 h-5" />
-                <span>{isMultiplayer ? 'Back to Room' : 'Back to Games'}</span>
+                <span>Back to Games</span>
               </button>
               <div className="flex items-center space-x-3">
                 <Target className="w-6 h-6 text-orange-600" />
                 <h1 className="text-xl font-bold bg-gradient-to-r from-orange-600 to-purple-600 bg-clip-text text-transparent">
-                  Who Am I? {isMultiplayer && roomId && <span className="text-sm font-normal">({roomId})</span>}
+                  Who Am I?
                 </h1>
               </div>
             </div>
@@ -366,148 +335,68 @@ const WhoAmI: React.FC<WhoAmIProps> = ({ onBack, username, roomId }) => {
         </header>
 
         <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Game Setup */}
-            <div className="lg:col-span-2">
-              <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-8 border border-white/20">
-                <div className="text-center mb-8">
-                  <Target className="w-16 h-16 text-orange-600 mx-auto mb-4" />
-                  <h2 className="text-3xl font-bold text-slate-900 mb-2">Who Am I?</h2>
-                  {isMultiplayer && (
-                    <div className="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
-                      <p className="text-purple-800 font-medium">Multiplayer Room: {roomId}</p>
-                      <p className="text-sm text-purple-600">Playing with friends online!</p>
-                    </div>
-                  )}
-                  <p className="text-slate-600 max-w-2xl mx-auto">
-                    🎭 Guess the celebrity through Yes/No questions! One player gets a secret name, 
-                    others ask up to 20 questions and have 3 guesses each to identify the celebrity.
-                  </p>
-                </div>
+          <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-8 border border-white/20 max-w-2xl mx-auto">
+            <div className="text-center mb-8">
+              <Target className="w-16 h-16 text-orange-600 mx-auto mb-4" />
+              <h2 className="text-3xl font-bold text-slate-900 mb-2">Who Am I?</h2>
+              <p className="text-slate-600">
+                Guess the secret celebrity using up to 20 Yes/No questions and 3 guesses!
+              </p>
+            </div>
 
-                {!isMultiplayer && (
-                  <div className="mb-8">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-semibold text-slate-900">Players ({players.length}/8)</h3>
-                      {players.length < 8 && (
-                        <button
-                          onClick={() => setShowAddPlayer(true)}
-                          className="px-4 py-2 bg-gradient-to-r from-orange-600 to-purple-600 text-white rounded-lg hover:from-orange-700 hover:to-purple-700 transition-colors duration-200"
-                        >
-                          Add Player
-                        </button>
-                      )}
-                    </div>
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-slate-900">Players ({players.length}/8)</h3>
+                <button
+                  onClick={() => setShowAddPlayer(true)}
+                  className="px-3 py-1.5 bg-orange-600 text-white rounded-lg text-sm font-semibold"
+                >
+                  Add Player
+                </button>
+              </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                      {players.map((player) => (
-                        <div key={player.id} className="flex items-center justify-between p-3 bg-orange-50 rounded-lg border border-orange-200">
-                          <div className="flex items-center space-x-3">
-                            <div className="w-10 h-10 bg-gradient-to-r from-orange-500 to-purple-600 rounded-full flex items-center justify-center shadow-lg">
-                              <span className="text-white font-semibold">{player.name.charAt(0)}</span>
-                            </div>
-                            <div>
-                              <span className="font-medium text-slate-900">{player.name}</span>
-                              <p className="text-sm text-slate-600">Ready to guess!</p>
-                            </div>
-                          </div>
-                          {players.length > 1 && (
-                            <button
-                              onClick={() => removePlayer(player.id)}
-                              className="text-red-500 hover:text-red-700 text-sm"
-                            >
-                              Remove
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-
-                    {showAddPlayer && (
-                      <div className="mb-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
-                        <div className="flex space-x-3">
-                          <input
-                            type="text"
-                            value={newPlayerName}
-                            onChange={(e) => setNewPlayerName(e.target.value)}
-                            placeholder="Enter player name..."
-                            className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
-                            onKeyPress={(e) => e.key === 'Enter' && addPlayer()}
-                          />
-                          <button
-                            onClick={addPlayer}
-                            className="px-4 py-2 bg-gradient-to-r from-orange-600 to-purple-600 text-white rounded-lg hover:from-orange-700 hover:to-purple-700 transition-colors duration-200"
-                          >
-                            Add
-                          </button>
-                          <button
-                            onClick={() => setShowAddPlayer(false)}
-                            className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors duration-200"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
+              <div className="space-y-2">
+                {players.map(p => (
+                  <div key={p.id} className="p-3 bg-slate-50 rounded-lg flex items-center justify-between border">
+                    <span className="font-semibold text-slate-800">{p.name}</span>
+                    {players.length > 1 && (
+                      <button onClick={() => removeLocalPlayer(p.id)} className="text-xs text-red-500 hover:underline">
+                        Remove
+                      </button>
                     )}
                   </div>
-                )}
+                ))}
+              </div>
 
-                <div className="text-center">
-                  <button
-                    onClick={startGame}
-                    disabled={players.length < 2}
-                    className="px-8 py-3 bg-gradient-to-r from-orange-600 to-purple-600 text-white rounded-lg font-semibold hover:from-orange-700 hover:to-purple-700 transform hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Start Who Am I!
+              {showAddPlayer && (
+                <div className="mt-4 flex space-x-2">
+                  <input
+                    value={newPlayerName}
+                    onChange={e => setNewPlayerName(e.target.value)}
+                    placeholder="Player name..."
+                    className="flex-1 px-3 py-2 border rounded-lg text-sm"
+                  />
+                  <button onClick={addLocalPlayer} className="px-4 py-2 bg-orange-600 text-white rounded-lg text-sm font-bold">
+                    Add
                   </button>
-                  {players.length < 2 && (
-                    <p className="text-sm text-gray-500 mt-2">Need at least 2 players to start</p>
-                  )}
                 </div>
-              </div>
+              )}
             </div>
 
-            {/* Game Rules */}
-            <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-white/20">
-              <div className="p-6 border-b border-slate-200">
-                <h3 className="text-lg font-semibold text-slate-900">How to Play</h3>
-              </div>
-              <div className="p-6 space-y-4">
-                <div className="flex items-start space-x-3">
-                  <div className="w-6 h-6 bg-orange-600 text-white rounded-full flex items-center justify-center text-sm font-bold">1</div>
-                  <p className="text-sm text-slate-600">One player gets a secret celebrity name</p>
-                </div>
-                <div className="flex items-start space-x-3">
-                  <div className="w-6 h-6 bg-orange-600 text-white rounded-full flex items-center justify-center text-sm font-bold">2</div>
-                  <p className="text-sm text-slate-600">Others ask up to 20 Yes/No questions</p>
-                </div>
-                <div className="flex items-start space-x-3">
-                  <div className="w-6 h-6 bg-orange-600 text-white rounded-full flex items-center justify-center text-sm font-bold">3</div>
-                  <p className="text-sm text-slate-600">Each player has 3 chances to guess the name</p>
-                </div>
-                <div className="flex items-start space-x-3">
-                  <div className="w-6 h-6 bg-orange-600 text-white rounded-full flex items-center justify-center text-sm font-bold">4</div>
-                  <p className="text-sm text-slate-600">Score points for correct guesses based on difficulty</p>
-                </div>
-              </div>
-              
-              <div className="p-6 border-t border-slate-200">
-                <h4 className="font-semibold text-slate-900 mb-3">Celebrity Categories</h4>
-                <div className="space-y-2 text-sm text-slate-600">
-                  <p>• Bollywood Actors & Actresses</p>
-                  <p>• Cricketers & Sports Stars</p>
-                  <p>• Singers & Musicians</p>
-                  <p>• Directors & YouTubers</p>
-                  <p>• And many more!</p>
-                </div>
-              </div>
-            </div>
+            <button
+              onClick={startLocalGame}
+              disabled={players.length < 2}
+              className="w-full py-3 bg-gradient-to-r from-orange-600 to-purple-600 text-white rounded-xl font-bold disabled:opacity-50"
+            >
+              Start Game
+            </button>
           </div>
         </main>
       </div>
     );
   }
 
+  // Active game view
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-purple-900">
       <header className="bg-white/95 backdrop-blur-sm shadow-lg border-b border-white/20">
@@ -520,20 +409,20 @@ const WhoAmI: React.FC<WhoAmIProps> = ({ onBack, username, roomId }) => {
               <ArrowLeft className="w-5 h-5" />
               <span>Back to Games</span>
             </button>
-            
+
             <div className="flex items-center space-x-6">
               <div className="flex items-center space-x-2">
                 <MessageCircle className="w-5 h-5 text-slate-300" />
-                <span className="text-white">{questionsAsked}/20 questions</span>
+                <span className="text-white font-mono">{questionsAsked}/20 questions</span>
               </div>
               <div className="flex items-center space-x-2">
                 <Crown className="w-5 h-5 text-slate-300" />
                 <span className="text-white">Round {gameRound}</span>
               </div>
               {isMultiplayer && roomId && (
-                <div className="flex items-center space-x-2">
-                  <Target className="w-5 h-5 text-orange-400" />
-                  <span className="text-orange-400 font-medium">{roomId}</span>
+                <div className="flex items-center space-x-2 bg-purple-500/20 px-3 py-1 rounded-full border border-purple-400/30">
+                  <Wifi className="w-4 h-4 text-purple-300 animate-pulse" />
+                  <span className="text-purple-200 font-mono text-sm">{roomId}</span>
                 </div>
               )}
             </div>
@@ -543,276 +432,230 @@ const WhoAmI: React.FC<WhoAmIProps> = ({ onBack, username, roomId }) => {
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Game Area */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Current Player & Celebrity */}
             <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-6 border border-white/20">
               <div className="text-center mb-6">
-                <div className="w-16 h-16 bg-gradient-to-r from-orange-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
-                  <span className="text-white font-bold text-xl">{players[currentPlayerIndex].name.charAt(0)}</span>
+                <div className="w-14 h-14 bg-gradient-to-r from-orange-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-3 shadow-md">
+                  <span className="text-white font-bold text-xl">{currentHolder?.name.charAt(0)}</span>
                 </div>
-                <h3 className="text-2xl font-bold text-slate-900 mb-2">{players[currentPlayerIndex].name} has the celebrity!</h3>
-                <p className="text-slate-600">Others can ask Yes/No questions and make guesses</p>
+                <h3 className="text-2xl font-bold text-slate-900 mb-1">
+                  {isMeHolder ? 'You hold the Secret Celebrity!' : `${currentHolder?.name} has the celebrity!`}
+                </h3>
+                <p className="text-slate-500 text-sm">
+                  {isMeHolder
+                    ? 'Answer other players’ Yes/No questions truthfully.'
+                    : 'Ask Yes/No questions or make your guess!'}
+                </p>
               </div>
 
-              {currentCelebrity && (
-                <div className="space-y-6">
-                  {/* Celebrity Name for Current Player */}
-                  {players[currentPlayerIndex].name === username && (
-                    <div className="bg-slate-900 text-white p-6 rounded-xl shadow-lg">
-                      <div className="flex items-center justify-between mb-4">
-                        <div className={`inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-gradient-to-r ${getDifficultyColor(currentCelebrity.difficulty)} text-white`}>
-                          <Star className="w-4 h-4" />
-                          <span className="text-sm font-medium">{currentCelebrity.difficulty}</span>
-                        </div>
-                        <button
-                          onClick={() => setShowCelebrityName(!showCelebrityName)}
-                          className="flex items-center space-x-2 px-3 py-1 bg-white/20 rounded-lg hover:bg-white/30 transition-colors duration-200"
-                        >
-                          {showCelebrityName ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                          <span className="text-sm">{showCelebrityName ? 'Hide' : 'Show'}</span>
-                        </button>
-                      </div>
-                      
-                      {showCelebrityName && (
-                        <div className="text-center">
-                          <h2 className="text-3xl font-bold mb-2">{currentCelebrity.name}</h2>
-                          <p className="text-slate-300">{currentCelebrity.category}</p>
-                        </div>
-                      )}
-                      
-                      {!showCelebrityName && (
-                        <div className="text-center">
-                          <p className="text-slate-300 mb-2">Your Celebrity:</p>
-                          <p className="text-lg font-medium">Click "Show" to reveal the name</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
+              {/* Secret Celebrity Box for Holder */}
+              {isMeHolder && currentCelebrity && (
+                <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-xl mb-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="px-3 py-1 rounded-full bg-gradient-to-r from-orange-500 to-pink-500 text-xs font-bold">
+                      {currentCelebrity.difficulty} Difficulty
+                    </span>
+                    <button
+                      onClick={() => setShowCelebrityName(!showCelebrityName)}
+                      className="flex items-center space-x-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-semibold transition"
+                    >
+                      {showCelebrityName ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      <span>{showCelebrityName ? 'Hide Name' : 'Reveal to Yourself'}</span>
+                    </button>
+                  </div>
 
-                  {/* Response Buttons for Current Player */}
-                  {players[currentPlayerIndex].name === username && chatMessages.length > 0 && 
-                   chatMessages[chatMessages.length - 1].type === 'question' && 
-                   !chatMessages[chatMessages.length - 1].response && (
-                    <div className="bg-orange-50 border border-orange-200 rounded-xl p-6">
-                      <h4 className="font-semibold text-orange-800 mb-4 text-center">
-                        Respond to: "{chatMessages[chatMessages.length - 1].message}"
-                      </h4>
-                      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                        <button
-                          onClick={() => respondToQuestion('yes')}
-                          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200 flex items-center justify-center space-x-2"
-                        >
-                          <ThumbsUp className="w-4 h-4" />
-                          <span>Yes</span>
-                        </button>
-                        <button
-                          onClick={() => respondToQuestion('no')}
-                          className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors duration-200 flex items-center justify-center space-x-2"
-                        >
-                          <ThumbsDown className="w-4 h-4" />
-                          <span>No</span>
-                        </button>
-                        <button
-                          onClick={() => respondToQuestion('maybe-yes')}
-                          className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors duration-200 flex items-center justify-center space-x-2"
-                        >
-                          <HelpCircle className="w-4 h-4" />
-                          <span>Maybe Yes</span>
-                        </button>
-                        <button
-                          onClick={() => respondToQuestion('maybe-no')}
-                          className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors duration-200 flex items-center justify-center space-x-2"
-                        >
-                          <Minus className="w-4 h-4" />
-                          <span>Maybe No</span>
-                        </button>
-                        <button
-                          onClick={() => respondToQuestion('not-sure')}
-                          className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors duration-200 flex items-center justify-center space-x-2"
-                        >
-                          <HelpCircle className="w-4 h-4" />
-                          <span>Not Sure</span>
-                        </button>
-                      </div>
+                  {showCelebrityName ? (
+                    <div className="text-center py-2">
+                      <h2 className="text-3xl font-extrabold mb-1 tracking-wide">{currentCelebrity.name}</h2>
+                      <p className="text-sm text-slate-300">{currentCelebrity.category}</p>
                     </div>
-                  )}
-
-                  {/* Question Form for Other Players */}
-                  {players[currentPlayerIndex].name !== username && questionsAsked < 20 && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
-                      <h4 className="font-semibold text-blue-800 mb-4">Ask a Yes/No Question</h4>
-                      <form onSubmit={sendQuestion} className="flex space-x-3">
-                        <input
-                          type="text"
-                          value={newQuestion}
-                          onChange={(e) => setNewQuestion(e.target.value)}
-                          placeholder="e.g., Is this person a male actor?"
-                          className="flex-1 px-4 py-3 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                        />
-                        <button
-                          type="submit"
-                          disabled={!newQuestion.trim()}
-                          className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg font-semibold hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 flex items-center space-x-2"
-                        >
-                          <Send className="w-4 h-4" />
-                          <span>Ask</span>
-                        </button>
-                      </form>
-                    </div>
-                  )}
-
-                  {/* Guess Form for Other Players */}
-                  {players[currentPlayerIndex].name !== username && 
-                   players.find(p => p.name === username)?.guessesLeft! > 0 && (
-                    <div className="bg-green-50 border border-green-200 rounded-xl p-6">
-                      <h4 className="font-semibold text-green-800 mb-4">
-                        Make a Guess ({players.find(p => p.name === username)?.guessesLeft} left)
-                      </h4>
-                      <form onSubmit={submitGuess} className="flex space-x-3">
-                        <input
-                          type="text"
-                          value={newGuess}
-                          onChange={(e) => setNewGuess(e.target.value)}
-                          placeholder="Enter celebrity name..."
-                          className="flex-1 px-4 py-3 border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
-                        />
-                        <button
-                          type="submit"
-                          disabled={!newGuess.trim()}
-                          className="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg font-semibold hover:from-green-700 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 flex items-center space-x-2"
-                        >
-                          <Target className="w-4 h-4" />
-                          <span>Guess</span>
-                        </button>
-                      </form>
+                  ) : (
+                    <div className="text-center py-3 text-slate-400 text-sm font-semibold">
+                      Click "Reveal to Yourself" to see the celebrity name!
                     </div>
                   )}
                 </div>
               )}
+
+              {/* Clue response buttons for Holder */}
+              {isMeHolder && (
+                (() => {
+                  const lastQ = [...chatMessages].reverse().find(m => m.type === 'question' && !m.response);
+                  return (
+                    <div className="bg-orange-50 border border-orange-200 rounded-xl p-5 mb-6">
+                      <h4 className="font-bold text-orange-900 text-center mb-3">
+                        {lastQ ? `Respond to: "${lastQ.message}"` : 'Waiting for questions from players...'}
+                      </h4>
+                      {lastQ && (
+                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                          <button
+                            onClick={() => respondToQuestion('yes')}
+                            className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs flex items-center justify-center space-x-1 transition"
+                          >
+                            <ThumbsUp className="w-3.5 h-3.5" />
+                            <span>Yes</span>
+                          </button>
+                          <button
+                            onClick={() => respondToQuestion('no')}
+                            className="py-2.5 px-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg text-xs flex items-center justify-center space-x-1 transition"
+                          >
+                            <ThumbsDown className="w-3.5 h-3.5" />
+                            <span>No</span>
+                          </button>
+                          <button
+                            onClick={() => respondToQuestion('maybe-yes')}
+                            className="py-2.5 px-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg text-xs flex items-center justify-center space-x-1 transition"
+                          >
+                            <HelpCircle className="w-3.5 h-3.5" />
+                            <span>Maybe Yes</span>
+                          </button>
+                          <button
+                            onClick={() => respondToQuestion('maybe-no')}
+                            className="py-2.5 px-3 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-lg text-xs flex items-center justify-center space-x-1 transition"
+                          >
+                            <Minus className="w-3.5 h-3.5" />
+                            <span>Maybe No</span>
+                          </button>
+                          <button
+                            onClick={() => respondToQuestion('not-sure')}
+                            className="py-2.5 px-3 bg-slate-600 hover:bg-slate-700 text-white font-bold rounded-lg text-xs flex items-center justify-center space-x-1 transition"
+                          >
+                            <HelpCircle className="w-3.5 h-3.5" />
+                            <span>Not Sure</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()
+              )}
+
+              {/* Question form for other players */}
+              {!isMeHolder && questionsAsked < 20 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 mb-4">
+                  <h4 className="font-bold text-blue-900 text-sm mb-3">Ask a Yes/No Question</h4>
+                  <form onSubmit={sendQuestion} className="flex space-x-2">
+                    <input
+                      type="text"
+                      value={newQuestion}
+                      onChange={e => setNewQuestion(e.target.value)}
+                      placeholder="e.g. Is this celebrity a cricket player?"
+                      className="flex-1 px-4 py-2.5 border border-blue-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!newQuestion.trim()}
+                      className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold rounded-xl text-sm disabled:opacity-50 flex items-center space-x-1"
+                    >
+                      <Send className="w-4 h-4" />
+                      <span>Ask</span>
+                    </button>
+                  </form>
+                </div>
+              )}
+
+              {/* Guess form for other players */}
+              {!isMeHolder && myGuessesLeft > 0 && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-bold text-emerald-900 text-sm">Make a Celebrity Guess</h4>
+                    <span className="text-xs font-semibold px-2 py-0.5 bg-emerald-200 text-emerald-800 rounded-full">
+                      {myGuessesLeft} guesses left
+                    </span>
+                  </div>
+                  <form onSubmit={submitGuess} className="flex space-x-2">
+                    <input
+                      type="text"
+                      value={newGuess}
+                      onChange={e => setNewGuess(e.target.value)}
+                      placeholder="Enter full celebrity name..."
+                      className="flex-1 px-4 py-2.5 border border-emerald-300 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!newGuess.trim()}
+                      className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-green-600 text-white font-bold rounded-xl text-sm disabled:opacity-50 flex items-center space-x-1"
+                    >
+                      <Target className="w-4 h-4" />
+                      <span>Guess</span>
+                    </button>
+                  </form>
+                </div>
+              )}
             </div>
 
-            {/* Chat Messages */}
-            <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-white/20">
-              <div className="p-6 border-b border-slate-200">
-                <h3 className="text-lg font-semibold text-slate-900">Game Chat</h3>
-              </div>
-              <div className="p-6 h-96 overflow-y-auto">
+            {/* Chat & Question Log */}
+            <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-white/20 p-6">
+              <h3 className="font-bold text-slate-900 mb-4 flex items-center space-x-2">
+                <MessageCircle className="w-5 h-5 text-indigo-600" />
+                <span>Round Chat & Questions Log</span>
+              </h3>
+
+              <div className="h-72 overflow-y-auto space-y-3 pr-2">
                 {chatMessages.length === 0 ? (
-                  <p className="text-slate-500 text-center py-8">Game chat will appear here...</p>
+                  <p className="text-slate-400 text-center py-12 text-sm">No questions asked yet.</p>
                 ) : (
-                  <div className="space-y-4">
-                    {chatMessages.map((msg) => (
-                      <div key={msg.id} className={`flex flex-col space-y-1 ${
-                        msg.type === 'system' ? 'items-center' : 'items-start'
-                      }`}>
-                        {msg.type === 'system' ? (
-                          <div className="bg-purple-100 text-purple-800 px-4 py-2 rounded-full text-sm font-medium">
-                            {msg.message}
-                          </div>
-                        ) : (
-                          <>
-                            <div className="flex items-center space-x-2">
-                              <span className={`font-medium text-sm ${
-                                msg.type === 'question' ? 'text-blue-600' :
-                                msg.type === 'answer' ? 'text-orange-600' :
-                                msg.type === 'guess' ? 'text-green-600' :
-                                'text-slate-600'
-                              }`}>
-                                {msg.player}
-                              </span>
-                              <span className="text-xs text-slate-500">{formatTime(msg.timestamp)}</span>
-                              {msg.type === 'question' && <MessageCircle className="w-3 h-3 text-blue-500" />}
-                              {msg.type === 'guess' && <Target className="w-3 h-3 text-green-500" />}
-                            </div>
-                            <p className={`px-4 py-2 rounded-lg max-w-md ${
-                              msg.type === 'question' ? 'bg-blue-100 text-blue-800' :
-                              msg.type === 'answer' ? 'bg-orange-100 text-orange-800' :
-                              msg.type === 'guess' ? 'bg-green-100 text-green-800' :
-                              'bg-slate-100 text-slate-800'
-                            }`}>
-                              {msg.message}
-                            </p>
-                          </>
-                        )}
+                  chatMessages.map(msg => (
+                    <div
+                      key={msg.id}
+                      className={`p-3 rounded-xl border text-sm ${
+                        msg.type === 'system'
+                          ? 'bg-purple-50 border-purple-200 text-purple-900 font-semibold text-center'
+                          : msg.type === 'guess'
+                          ? 'bg-emerald-50 border-emerald-200 text-emerald-900 font-bold'
+                          : msg.type === 'answer'
+                          ? 'bg-amber-50 border-amber-200 text-amber-900 ml-6'
+                          : 'bg-blue-50 border-blue-200 text-blue-900'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between text-xs opacity-75 mb-1">
+                        <span className="font-bold">{msg.player}</span>
+                        <span>
+                          {typeof msg.timestamp === 'string'
+                            ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                            : new Date().toLocaleTimeString()}
+                        </span>
                       </div>
-                    ))}
-                  </div>
+                      <p>{msg.message}</p>
+                    </div>
+                  ))
                 )}
+                <div ref={chatRef} />
               </div>
             </div>
           </div>
 
-          {/* Scoreboard & Game Info */}
+          {/* Right Column: Scoreboard */}
           <div className="space-y-6">
-            {/* Scoreboard */}
-            <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-white/20">
-              <div className="p-6 border-b border-slate-200">
-                <h3 className="text-lg font-semibold text-slate-900">Scoreboard</h3>
-              </div>
-              <div className="p-6">
-                <div className="space-y-4">
-                  {players
-                    .sort((a, b) => b.score - a.score)
-                    .map((player, index) => (
+            <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-white/20 p-6">
+              <h3 className="font-bold text-slate-900 text-lg mb-4">Scoreboard</h3>
+              <div className="space-y-3">
+                {players
+                  .slice()
+                  .sort((a, b) => b.score - a.score)
+                  .map((p, idx) => {
+                    const isHolder = currentHolder && (p.userId === currentHolder.userId || p.name === currentHolder.name);
+                    return (
                       <div
-                        key={player.id}
-                        className={`flex items-center justify-between p-3 rounded-lg ${
-                          player.name === players[currentPlayerIndex].name
-                            ? 'bg-orange-100 border-2 border-orange-300'
-                            : 'bg-slate-50'
+                        key={p.userId || p.id}
+                        className={`p-3 rounded-xl border flex items-center justify-between ${
+                          isHolder ? 'bg-orange-50 border-orange-300' : 'bg-slate-50 border-slate-200'
                         }`}
                       >
                         <div className="flex items-center space-x-3">
-                          <div className="flex items-center justify-center w-6 h-6 bg-orange-600 text-white rounded-full text-xs font-bold">
-                            {index + 1}
-                          </div>
-                          <div className="w-8 h-8 bg-gradient-to-r from-orange-500 to-purple-600 rounded-full flex items-center justify-center shadow-lg">
-                            <span className="text-white text-sm font-semibold">{player.name.charAt(0)}</span>
+                          <span className="font-bold text-xs text-slate-400">#{idx + 1}</span>
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-600 flex items-center justify-center font-bold text-white text-xs">
+                            {p.name.charAt(0)}
                           </div>
                           <div>
-                            <span className="font-medium text-slate-900">{player.name}</span>
-                            {player.name === players[currentPlayerIndex].name && (
-                              <p className="text-xs text-orange-600 font-medium">Has Celebrity</p>
-                            )}
-                            {player.name !== players[currentPlayerIndex].name && (
-                              <p className="text-xs text-slate-600">{player.guessesLeft} guesses left</p>
-                            )}
+                            <p className="font-bold text-sm text-slate-900">{p.name}</p>
+                            {isHolder && <span className="text-[10px] text-orange-600 font-semibold">Holder</span>}
                           </div>
                         </div>
-                        <div className="text-lg font-bold text-orange-600">
-                          {player.score}
-                        </div>
+                        <span className="font-mono font-black text-lg text-purple-600">{p.score} pts</span>
                       </div>
-                    ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Game Status */}
-            <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg border border-white/20">
-              <div className="p-6 border-b border-slate-200">
-                <h3 className="text-lg font-semibold text-slate-900">Game Status</h3>
-              </div>
-              <div className="p-6 space-y-4">
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Round:</span>
-                  <span className="font-medium">{gameRound}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Questions Asked:</span>
-                  <span className="font-medium">{questionsAsked}/20</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600">Current Player:</span>
-                  <span className="font-medium">{players[currentPlayerIndex].name}</span>
-                </div>
-                {currentCelebrity && (
-                  <div className="flex justify-between">
-                    <span className="text-slate-600">Category:</span>
-                    <span className="font-medium">{currentCelebrity.category}</span>
-                  </div>
-                )}
+                    );
+                  })}
               </div>
             </div>
           </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Users, Trophy, Settings, BarChart3, Shield, Clock, Target, Award, TrendingUp, Trash2, RefreshCw } from 'lucide-react';
-import MultiplayerManager from '../utils/multiplayer';
+import { getApiUrl } from '../socket';
 
 interface AdminPanelProps {
   onBack: () => void;
@@ -36,10 +36,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack, setCurrentView }) => {
   const [realPlayerStats, setRealPlayerStats] = useState<PlayerStats[]>([]);
   const [realGameSessions, setRealGameSessions] = useState<GameSession[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [multiplayerManager] = useState(() => MultiplayerManager.getInstance());
+  const API = getApiUrl();
 
   // Load real data from localStorage
-  const loadRealData = () => {
+  const loadRealData = async () => {
     setIsLoading(true);
 
     try {
@@ -53,18 +53,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack, setCurrentView }) => {
       }
 
       // Get room data to find more players
-      const rooms = multiplayerManager.getAllRooms();
+      let rooms: any[] = [];
+      try {
+        const res = await fetch(`${API}/api/rooms`);
+        if (res.ok) rooms = await res.json();
+      } catch (e) {}
       rooms.forEach((room: any) => {
-        room.players.forEach((player: string) => {
-          usedUsernames.add(player);
+        (room.players || []).forEach((player: any) => {
+          const pName = typeof player === 'string' ? player : player.name;
+          if (pName) usedUsernames.add(pName);
         });
       });
 
       // Convert rooms to game sessions
       const sessions: GameSession[] = rooms.map((room: any) => ({
-        id: room.id,
-        game: room.game,
-        players: room.players,
+        id: room._id || room.code || room.id,
+        game: room.gameKey || room.name || room.game,
+        players: (room.players || []).map((p: any) => typeof p === 'string' ? p : p.name),
         startTime: new Date(room.createdAt),
         endTime: room.status === 'completed' ? new Date(Date.now() - Math.random() * 3600000) : undefined,
         winner: room.status === 'completed' ? room.players[Math.floor(Math.random() * room.players.length)] : undefined,
@@ -81,8 +86,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack, setCurrentView }) => {
         // Get games this player has participated in
         const playerGames: string[] = [];
         rooms.forEach((room: any) => {
-          if (room.players.includes(username)) {
-            playerGames.push(room.game);
+          if ((room.players || []).some((p: any) => (typeof p === 'string' ? p : p.name) === username)) {
+            playerGames.push(room.gameKey || room.name || room.game);
           }
         });
 
