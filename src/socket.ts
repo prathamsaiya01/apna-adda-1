@@ -2,6 +2,13 @@
 import { io, Socket } from "socket.io-client";
 
 export const getApiUrl = (): string => {
+  if (typeof window !== "undefined") {
+    if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+      const custom = window.localStorage?.getItem("addaApiUrl");
+      if (custom) return custom.replace(/\/$/, "");
+      return "http://localhost:4000";
+    }
+  }
   const envUrl = import.meta.env.VITE_API_URL;
   if (envUrl && typeof envUrl === "string" && envUrl.trim()) {
     return envUrl.trim().replace(/\/$/, "");
