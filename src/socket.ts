@@ -9,16 +9,31 @@ export const getApiUrl = (): string => {
       const queryApi = urlParams.get("api");
       if (queryApi && queryApi.trim()) {
         const clean = queryApi.trim().replace(/\/$/, "");
-        window.localStorage?.setItem("addaApiUrl", clean);
-        return clean;
+        if (clean.includes("apna-adda-backend.onrender.com") && !clean.includes("apna-adda-backend-1")) {
+          window.localStorage?.removeItem("addaApiUrl");
+        } else {
+          window.localStorage?.setItem("addaApiUrl", clean);
+          return clean;
+        }
       }
     } catch (e) {
       // ignore in environments without window search
     }
 
-    // 2. Check saved custom API URL
-    const custom = window.localStorage?.getItem("addaApiUrl");
-    if (custom && custom.trim()) return custom.trim().replace(/\/$/, "");
+    // 2. Check saved custom API URL (filter out deprecated backend)
+    try {
+      const custom = window.localStorage?.getItem("addaApiUrl");
+      if (custom && custom.trim()) {
+        const clean = custom.trim().replace(/\/$/, "");
+        if (clean.includes("apna-adda-backend.onrender.com") && !clean.includes("apna-adda-backend-1")) {
+          window.localStorage?.removeItem("addaApiUrl");
+        } else {
+          return clean;
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
 
     // 3. Local dev: localhost, 127.0.0.1, or local LAN IP (e.g. 192.168.x.x, 10.x.x.x, 172.x.x.x)
     const host = window.location.hostname;

@@ -14,13 +14,15 @@ interface AtlasCategory {
 
 interface AtlasSectionProps {
   onBack: () => void;
+  onGoToMultiplayer?: () => void;
   username: string;
   roomId?: string | null;
 }
 
-const AtlasSection: React.FC<AtlasSectionProps> = ({ onBack, username, roomId }) => {
+const AtlasSection: React.FC<AtlasSectionProps> = ({ onBack, onGoToMultiplayer, username, roomId }) => {
   const [currentView, setCurrentView] = useState<'categories' | 'game'>('categories');
   const [selectedGame, setSelectedGame] = useState<string | null>(null);
+  const [showModeModal, setShowModeModal] = useState<string | null>(null);
 
   const atlasCategories: AtlasCategory[] = [
     {
@@ -93,6 +95,12 @@ const AtlasSection: React.FC<AtlasSectionProps> = ({ onBack, username, roomId })
   const handleCategorySelect = (category: AtlasCategory) => {
     if (category.comingSoon) return;
     
+    if (!roomId) {
+      // In local mode, ask user if they want local or online multiplayer
+      setShowModeModal(category.component || 'CricketersAtlas');
+      return;
+    }
+
     setSelectedGame(category.component || null);
     setCurrentView('game');
   };
@@ -230,6 +238,61 @@ const AtlasSection: React.FC<AtlasSectionProps> = ({ onBack, username, roomId })
           </div>
         </div>
       </main>
+      {showModeModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full border border-slate-200">
+            <h3 className="text-xl font-bold text-slate-900 mb-2 text-center">
+              Choose How to Play
+            </h3>
+            <p className="text-slate-600 text-sm mb-6 text-center">
+              Play with friends on other devices or play locally on this screen!
+            </p>
+
+            <div className="space-y-3">
+              <button
+                onClick={() => {
+                  setShowModeModal(null);
+                  if (onGoToMultiplayer) {
+                    onGoToMultiplayer();
+                  } else {
+                    onBack();
+                  }
+                }}
+                className="w-full p-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-bold flex items-center justify-between shadow hover:shadow-lg transition-all"
+              >
+                <div className="text-left">
+                  <div className="text-base font-bold">🌐 Online Multiplayer</div>
+                  <div className="text-xs text-blue-100">Play with friends on separate phones via room code</div>
+                </div>
+                <span className="text-xl">➔</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  const g = showModeModal;
+                  setShowModeModal(null);
+                  setSelectedGame(g);
+                  setCurrentView('game');
+                }}
+                className="w-full p-4 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl font-semibold flex items-center justify-between transition-all"
+              >
+                <div className="text-left">
+                  <div className="text-base font-bold">👥 Pass & Play</div>
+                  <div className="text-xs text-slate-500">Take turns together on this single device</div>
+                </div>
+                <span className="text-xl">➔</span>
+              </button>
+
+              <button
+                onClick={() => setShowModeModal(null)}
+                className="w-full py-2.5 text-slate-500 hover:text-slate-800 text-sm font-medium"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -39,6 +39,7 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
   const [requiredLetter, setRequiredLetter] = useState<string>('');
   const [gameStarted, setGameStarted] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
+  const [errorFeedback, setErrorFeedback] = useState<string>('');
   const [gameTimer, setGameTimer] = useState(0);
   const [turnTimer, setTurnTimer] = useState(30);
   const [newPlayerName, setNewPlayerName] = useState('');
@@ -315,20 +316,21 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentInput.trim() || isValidating) return;
+    setErrorFeedback('');
 
     if (isMultiplayer && roomId) {
       const activePlayer = players[currentPlayerIndex];
       const isMyTurn = activePlayer && (activePlayer.userId === userId || activePlayer.name === username);
       if (!isMyTurn) {
-        alert("Please wait for your turn!");
+        setErrorFeedback(`Please wait for ${activePlayer?.name || 'opponent'}'s turn!`);
         return;
       }
 
       setIsValidating(true);
       const actionTimeout = setTimeout(() => {
         setIsValidating(false);
-        alert("The server took too long to validate. Please check your connection and try again.");
-      }, 10000);
+        setErrorFeedback("Server took too long to validate. Please check your connection and retry.");
+      }, 8000);
 
       socket.emit(
         'gameAction',
@@ -341,9 +343,10 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
           clearTimeout(actionTimeout);
           setIsValidating(false);
           if (res?.error) {
-            alert(res.error);
+            setErrorFeedback(res.error);
           } else {
             setCurrentInput('');
+            setErrorFeedback('');
           }
         }
       );
@@ -354,7 +357,7 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
     const cricketerName = currentInput.trim();
     const alphaOnly = cricketerName.toLowerCase().replace(/[^a-z]/g, '');
     if (alphaOnly.length < 2) {
-      alert('Please enter a cricketer name with at least 2 letters!');
+      setErrorFeedback('Please enter a cricketer name with at least 2 letters!');
       return;
     }
 
@@ -362,7 +365,7 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
     const lastLetter = alphaOnly.charAt(alphaOnly.length - 1);
 
     if (requiredLetter && firstLetter !== requiredLetter.toLowerCase()) {
-      alert(`The cricketer's name must start with "${requiredLetter.toUpperCase()}"! (You entered "${cricketerName}")`);
+      setErrorFeedback(`Must start with "${requiredLetter.toUpperCase()}"! (You entered "${cricketerName}")`);
       return;
     }
 
@@ -370,13 +373,14 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
       move => move.cricketer.toLowerCase().replace(/[^a-z]/g, '') === alphaOnly
     );
     if (alreadyUsed) {
-      alert(`"${cricketerName}" has already been named in this game!`);
+      setErrorFeedback(`"${cricketerName}" has already been used in this game!`);
       return;
     }
 
     setIsValidating(true);
     setTimeout(() => {
       setIsValidating(false);
+      setErrorFeedback('');
       const move: GameMove = {
         player: players[currentPlayerIndex].name,
         cricketer: cricketerName,
@@ -393,7 +397,7 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
       setRequiredLetter(lastLetter.toUpperCase());
       nextLocalActivePlayer();
       setCurrentInput('');
-    }, 300);
+    }, 200);
   };
 
   const handleRestart = () => {
@@ -640,6 +644,39 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
                     <span className="text-orange-500 font-bold">➔</span>
                     <span className="text-xs text-orange-700 font-medium">Starts next turn!</span>
                   </div>
+                </div>
+              )}
+
+              {errorFeedback && (
+                <div className="mb-4 p-3.5 bg-red-50 border-2 border-red-300 rounded-xl text-red-800 text-sm font-semibold flex items-center justify-between shadow-sm">
+                  <div className="flex items-center space-x-2">
+                    <XCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+                    <span>{errorFeedback}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setErrorFeedback('')}
+                    className="text-red-500 hover:text-red-800 text-sm font-bold ml-2 px-1"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
+              {!isMultiplayer && (
+                <div className="mb-4 p-3 bg-blue-50/90 rounded-xl border border-blue-200 flex flex-wrap items-center justify-between gap-2 shadow-sm">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-base">📱</span>
+                    <span className="text-xs text-blue-900 font-medium">
+                      Single Device Mode (Pass & Play). Want to play across two separate phones?
+                    </span>
+                  </div>
+                  <button
+                    onClick={onBack}
+                    className="px-3 py-1 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg text-xs font-bold hover:shadow transition-all"
+                  >
+                    Multiplayer Rooms
+                  </button>
                 </div>
               )}
 

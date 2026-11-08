@@ -319,7 +319,12 @@ function App() {
       )}
 
       {currentView === 'atlas' && (
-        <AtlasSection onBack={handleBackToHome} username={savedUsername} roomId={currentRoomId} />
+        <AtlasSection
+          onBack={handleBackToHome}
+          onGoToMultiplayer={() => setCurrentView('rooms')}
+          username={savedUsername}
+          roomId={currentRoomId}
+        />
       )}
 
       {currentView === 'game' && currentGame && (
