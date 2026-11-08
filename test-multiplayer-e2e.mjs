@@ -307,6 +307,7 @@ async function runTests() {
     console.log("\n--- TEST 6: Spy Game - Location Masking from Spy ---");
     const spyA = createClient("user-spy-1", "Aakash");
     const spyB = createClient("user-spy-2", "Priya");
+    const spyC = createClient("user-spy-3", "Rohan");
 
     const spyRoom = await fetch(`${SERVER_URL}/api/rooms`, {
       method: "POST",
@@ -316,23 +317,27 @@ async function runTests() {
 
     await new Promise((res) => spyA.socket.emit("joinRoom", { roomIdentifier: spyRoom.room.code, userId: spyA.userId, name: spyA.name }, res));
     await new Promise((res) => spyB.socket.emit("joinRoom", { roomIdentifier: spyRoom.room.code, userId: spyB.userId, name: spyB.name }, res));
+    await new Promise((res) => spyC.socket.emit("joinRoom", { roomIdentifier: spyRoom.room.code, userId: spyC.userId, name: spyC.name }, res));
 
-    let spyCardA = null, spyCardB = null;
+    let spyCardA = null, spyCardB = null, spyCardC = null;
     spyA.socket.on("privateCard", (c) => { spyCardA = c; });
     spyB.socket.on("privateCard", (c) => { spyCardB = c; });
+    spyC.socket.on("privateCard", (c) => { spyCardC = c; });
 
     await new Promise((res) => spyA.socket.emit("startRoom", { roomId: spyRoom.room.id }, res));
     await delay(200);
 
-    assert(spyCardA && spyCardB, "Both players received Spy Game private cards");
-    const spyPlayerCard = spyCardA.role === "spy" ? spyCardA : spyCardB;
-    const civPlayerCard = spyCardA.role === "civilian" ? spyCardA : spyCardB;
+    assert(spyCardA && spyCardB && spyCardC, "All 3 players received Spy Game private cards");
+    const allCards = [spyCardA, spyCardB, spyCardC];
+    const spyPlayerCard = allCards.find(c => c.role === "spy");
+    const civPlayerCard = allCards.find(c => c.role === "civilian");
 
-    assert(spyPlayerCard.location === "???", "Spy's private card hides location (Anti-Cheat check passed)");
-    assert(civPlayerCard.location !== "???", `Civilian's private card reveals location: '${civPlayerCard.location}'`);
+    assert(spyPlayerCard && spyPlayerCard.location === "???", "Spy's private card hides location (Anti-Cheat check passed)");
+    assert(civPlayerCard && civPlayerCard.location !== "???", `Civilian's private card reveals location: '${civPlayerCard.location}'`);
 
     spyA.socket.disconnect();
     spyB.socket.disconnect();
+    spyC.socket.disconnect();
 
     // ---------------- TEST 7: Dumb Charades Movie Masking ----------------
     console.log("\n--- TEST 7: Dumb Charades - Actor-Only Movie Title ---");

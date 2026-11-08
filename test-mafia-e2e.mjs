@@ -110,7 +110,7 @@ async function runTests() {
         gameKey: "Mafia",
         hostName: p1.name,
         hostId: p1.userId,
-        maxPlayers: 16
+        maxPlayers: 6
       })
     }).then(r => r.json());
 
@@ -118,7 +118,7 @@ async function runTests() {
     const roomCode = createRes.room.code;
     assert(createRes.success && roomCode.length === 4, `Created Mafia room with 4-letter code: ${roomCode}`);
 
-    // All 6 join room
+    // All 6 join room and mark ready
     for (const client of allClients) {
       await new Promise(res => {
         client.socket.emit(
@@ -129,6 +129,11 @@ async function runTests() {
           }
         );
       });
+      if (client.userId !== p1.userId) {
+        await new Promise(res => {
+          client.socket.emit("toggleReady", { roomId, userId: client.userId }, res);
+        });
+      }
     }
 
     const cardsReceived = new Map();

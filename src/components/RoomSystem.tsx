@@ -96,6 +96,13 @@ const RoomSystem: React.FC<RoomSystemProps> = ({ onBack, username, onJoinGame })
 
   const [roomName, setRoomName] = useState("");
   const [selectedGame, setSelectedGame] = useState<string>(GAME_OPTIONS[0].key);
+
+  const handleSelectGame = (gameKey: string) => {
+    setSelectedGame(gameKey);
+    if (gameKey === "Mafia" && maxPlayers < 5) {
+      setMaxPlayers(6);
+    }
+  };
   const [maxPlayers, setMaxPlayers] = useState<number>(6);
   const [joinCode, setJoinCode] = useState("");
   const [currentRoom, setCurrentRoom] = useState<Room | null>(null);
@@ -104,6 +111,7 @@ const RoomSystem: React.FC<RoomSystemProps> = ({ onBack, username, onJoinGame })
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isStarting, setIsStarting] = useState(false);
 
   // Auto-fill code from URL query param if present
   useEffect(() => {
@@ -508,7 +516,7 @@ const RoomSystem: React.FC<RoomSystemProps> = ({ onBack, username, onJoinGame })
                 <label className="block text-sm font-semibold text-slate-700 mb-1">Select Game</label>
                 <select
                   value={selectedGame}
-                  onChange={e => setSelectedGame(e.target.value)}
+                  onChange={e => handleSelectGame(e.target.value)}
                   className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none text-slate-900 bg-white"
                 >
                   {GAME_OPTIONS.map(g => (
@@ -592,7 +600,7 @@ const RoomSystem: React.FC<RoomSystemProps> = ({ onBack, username, onJoinGame })
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 mt-1">
-                    Max capacity: {currentRoom.maxPlayers} players • Min required: {minRequired} players
+                    {isExactGame ? `Required: ${requiredCount} players (Official Role Matrix)` : `Capacity: ${currentRoom.maxPlayers} players • Min required: ${requiredCount} players`}
                   </p>
                 </div>
 
@@ -632,7 +640,7 @@ const RoomSystem: React.FC<RoomSystemProps> = ({ onBack, username, onJoinGame })
                 <div className="flex items-center space-x-2">
                   <Users className="w-5 h-5 text-indigo-600" />
                   <h3 className="font-bold text-lg text-slate-900">
-                    Connected Players ({currentCount} / {currentRoom.maxPlayers})
+                    Connected Players ({currentCount} / {isExactGame ? requiredCount : currentRoom.maxPlayers})
                   </h3>
                 </div>
                 {!isHost && (
@@ -651,7 +659,7 @@ const RoomSystem: React.FC<RoomSystemProps> = ({ onBack, username, onJoinGame })
 
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                 {currentRoom.players.map(p => {
-                  const isPlayerHost = p.userId === currentRoom.hostId;
+                  const isPlayerHost = p.userId === hostId || p.isHost;
                   const isMe = p.userId === userId;
 
                   return (

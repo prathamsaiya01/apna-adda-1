@@ -21,12 +21,73 @@ function normalizeGameKey(key) {
   return key;
 }
 
+const GAME_CONFIGS = {
+  Mafia: {
+    name: "Mafia",
+    minPlayers: 5,
+    maxPlayers: 16,
+    exactCount: true, // Mafia requires exactly the configured player count (5-16) to ensure balanced role distribution
+    requiresReady: true,
+    description: "Classic social deduction (5-16 players)"
+  },
+  MrWhite: {
+    name: "Mr. White",
+    minPlayers: 3,
+    maxPlayers: 12,
+    exactCount: false,
+    requiresReady: false,
+    description: "Find the impostor with the secret word (3-12 players)"
+  },
+  SpyGame: {
+    name: "Spy Game",
+    minPlayers: 3,
+    maxPlayers: 12,
+    exactCount: false,
+    requiresReady: false,
+    description: "Find the spy among your friends (3-12 players)"
+  },
+  DumbCharades: {
+    name: "Dumb Charades",
+    minPlayers: 2,
+    maxPlayers: 16,
+    exactCount: false,
+    requiresReady: false,
+    description: "Act out movies without speaking (2-16 players)"
+  },
+  CricketersAtlas: {
+    name: "Cricketers Atlas",
+    minPlayers: 2,
+    maxPlayers: 10,
+    exactCount: false,
+    requiresReady: false,
+    description: "Alphabetical cricketer chain game (2-10 players)"
+  },
+  HollywoodBollywoodGame: {
+    name: "Hollywood-Bollywood",
+    minPlayers: 2,
+    maxPlayers: 10,
+    exactCount: false,
+    requiresReady: false,
+    description: "Guess Actor, Actress, Movie & Song from initials (2-10 players)"
+  },
+  WhoAmI: {
+    name: "Who Am I?",
+    minPlayers: 2,
+    maxPlayers: 10,
+    exactCount: false,
+    requiresReady: false,
+    description: "Guess the celebrity through Yes/No questions (2-10 players)"
+  }
+};
+
 class RoomManager {
   constructor(io) {
     this.io = io;
     this.rooms = new Map(); // roomId -> Room
     this.socketToUser = new Map(); // socketId -> { roomId, userId }
     this.gameEngines = new Map(); // roomId -> Engine instance
+    this.disconnectTimers = new Map(); // userId -> timer
+    this.gracePeriod = process.env.NODE_ENV === "test" ? 100 : 60000;
 
     // Periodic cleanup of stale/empty rooms (rooms older than 6 hours or empty for 15 mins)
     setInterval(() => this.cleanupRooms(), 60000);
@@ -37,7 +98,7 @@ class RoomManager {
   }
 
   genCode() {
-    // Generate clean 4-character uppercase code without ambiguous chars (like O, 0, I, 1)
+    // Clean 4-character uppercase code without ambiguous chars
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     let code = "";
     for (let i = 0; i < 4; i++) {
@@ -74,7 +135,7 @@ class RoomManager {
         userId: p.userId,
         name: p.name,
         score: p.score || 0,
-        isReady: p.isReady,
+        isReady: Boolean(p.isReady),
         isHost: p.userId === r.hostId,
         connected: p.connected !== false
       })),
@@ -86,6 +147,7 @@ class RoomManager {
   createRoom({ name, gameKey, maxPlayers, hostId, hostName }) {
     if (!gameKey) throw new Error("gameKey is required");
     const normalizedKey = normalizeGameKey(gameKey);
+    const config = GAME_CONFIGS[normalizedKey] || { minPlayers: 2, maxPlayers: 16 };
 
     let code = this.genCode();
     while (this.findRoom(code)) {
@@ -93,16 +155,37 @@ class RoomManager {
     }
 
     const _id = this.genId();
+    let configuredMax;
+    if (normalizedKey === "Mafia") {
+      configuredMax = Math.max(5, Math.min(16, parseInt(maxPlayers, 10) || 6));
+    } else {
+      configuredMax = Math.max(config.minPlayers, Math.min(config.maxPlayers, parseInt(maxPlayers, 10) || 6));
+    }
+
+    const safeHostId = hostId || "host-" + Math.random().toString(36).slice(2, 8);
+    const safeHostName = hostName || "Host";
+
     const room = {
       _id,
       id: _id,
       code,
-      name: name || `${hostName || "Host"}'s Room`,
+      name: name || `${safeHostName}'s Adda`,
       gameKey: normalizedKey,
-      maxPlayers: Math.max(2, Math.min(20, parseInt(maxPlayers, 10) || 6)),
-      hostId,
-      players: [],
+      maxPlayers: configuredMax,
+      hostId: safeHostId,
+      players: [
+        {
+          userId: safeHostId,
+          name: safeHostName,
+          score: 0,
+          isReady: true,
+          isHost: true,
+          connected: true,
+          socketId: null
+        }
+      ],
       status: "waiting", // 'waiting' | 'active' | 'finished'
+      isStarting: false,
       createdAt: Date.now(),
       lastActive: Date.now()
     };
@@ -114,26 +197,41 @@ class RoomManager {
   joinRoom(socket, { code, roomId, roomIdentifier, userId, name }) {
     const room = this.findRoom(code || roomId || roomIdentifier);
     if (!room) {
-      throw new Error("Room not found. Please check the code.");
+      throw new Error("Room not found. Please check the room code.");
     }
 
     room.lastActive = Date.now();
 
-    // Check if player already in room (reconnection)
+    // Cancel pending disconnect timer for this user if reconnecting
+    if (userId && this.disconnectTimers.has(userId)) {
+      clearTimeout(this.disconnectTimers.get(userId));
+      this.disconnectTimers.delete(userId);
+    }
+
+    // Check if player already in room (reconnection or existing session)
     let player = room.players.find(p => p.userId === userId);
     if (player) {
       player.connected = true;
       player.socketId = socket.id;
-      if (name) player.name = name;
+      if (name && name.trim()) player.name = name.trim();
+      // Ensure host flag is accurate
+      player.isHost = player.userId === room.hostId;
+      if (player.isHost) player.isReady = true;
     } else {
-      if (room.players.length >= room.maxPlayers) {
-        throw new Error(`Room is full (max ${room.maxPlayers} players)`);
+      // New player attempting to join
+      if (room.status === "active") {
+        throw new Error("Game is already in progress in this room. Late joining is not allowed.");
       }
+      if (room.players.length >= room.maxPlayers) {
+        throw new Error(`Room is full (maximum ${room.maxPlayers} players).`);
+      }
+
       player = {
         userId,
-        name: name || `Player ${room.players.length + 1}`,
+        name: (name && name.trim()) || `Player ${room.players.length + 1}`,
         score: 0,
-        isReady: userId === room.hostId, // Host is ready by default
+        isReady: userId === room.hostId, // Host is always ready by default
+        isHost: userId === room.hostId,
         connected: true,
         socketId: socket.id
       };
@@ -152,7 +250,7 @@ class RoomManager {
 
     this.broadcastRoomUpdate(room);
 
-    // If game engine exists and is active, send current game state and private state
+    // If game engine exists and is active, send current game state to all players
     const engine = this.gameEngines.get(room._id);
     if (engine) {
       engine.broadcastState();
@@ -166,7 +264,24 @@ class RoomManager {
       gameKey: room.gameKey,
       isHost: room.hostId === userId,
       status: room.status,
-      room
+      room: {
+        _id: room._id,
+        roomId: room._id,
+        code: room.code,
+        name: room.name,
+        gameKey: room.gameKey,
+        maxPlayers: room.maxPlayers,
+        hostId: room.hostId,
+        status: room.status,
+        players: room.players.map(p => ({
+          userId: p.userId,
+          name: p.name,
+          score: p.score || 0,
+          isReady: Boolean(p.isReady),
+          isHost: p.userId === room.hostId,
+          connected: p.connected !== false
+        }))
+      }
     };
   }
 
@@ -201,6 +316,13 @@ class RoomManager {
     const player = room.players.find(p => p.userId === userId);
     if (!player) throw new Error("Player not in room");
 
+    // Host is always ready
+    if (player.userId === room.hostId) {
+      player.isReady = true;
+      this.broadcastRoomUpdate(room);
+      return { ok: true, success: true, isReady: true };
+    }
+
     player.isReady = !player.isReady;
     this.broadcastRoomUpdate(room);
     return { ok: true, success: true, isReady: player.isReady };
@@ -220,10 +342,12 @@ class RoomManager {
       return;
     }
 
-    // Host migration if host left
+    // Host migration if host permanently left
     if (room.hostId === userId && room.players.length > 0) {
-      room.hostId = room.players[0].userId;
-      room.players[0].isReady = true;
+      const nextHost = room.players.find(p => p.connected) || room.players[0];
+      room.hostId = nextHost.userId;
+      nextHost.isHost = true;
+      nextHost.isReady = true;
     }
 
     this.broadcastRoomUpdate(room);
@@ -232,7 +356,7 @@ class RoomManager {
   kickPlayer(hostUserId, { roomId, targetUserId }) {
     const room = this.findRoom(roomId);
     if (!room) throw new Error("Room not found");
-    if (room.hostId !== hostUserId) throw new Error("Only host can remove players");
+    if (room.hostId !== hostUserId) throw new Error("Only the room host can remove players");
     if (hostUserId === targetUserId) throw new Error("Cannot kick yourself");
 
     const target = room.players.find(p => p.userId === targetUserId);
@@ -251,11 +375,90 @@ class RoomManager {
     return { ok: true, success: true };
   }
 
+  /**
+   * PHASE 3: Authoritative Server-Side Start Validation
+   * Validates room state, host permissions, exact/min player count, connected players, and ready status.
+   */
+  validateCanStart(room, userId) {
+    if (!room) {
+      throw new Error("Room not found");
+    }
+
+    if (room.status !== "waiting") {
+      throw new Error("The game has already started or is no longer waiting.");
+    }
+
+    if (room.isStarting) {
+      throw new Error("Game initialization is already in progress. Please wait.");
+    }
+
+    if (room.hostId !== userId) {
+      throw new Error("Only the room host can start the game.");
+    }
+
+    const key = normalizeGameKey(room.gameKey);
+    const config = GAME_CONFIGS[key] || { minPlayers: 2, maxPlayers: 16, requiresReady: true };
+
+    // Player count validation
+    const currentCount = room.players.length;
+
+    if (config.exactCount) {
+      // Exact player count game (e.g., Mafia configured for N players)
+      const required = room.maxPlayers;
+      if (currentCount < required) {
+        const diff = required - currentCount;
+        throw new Error(
+          `Cannot start: ${config.name} is configured for ${required} players. ` +
+          `Currently ${currentCount} joined. Waiting for ${diff} more player${diff > 1 ? "s" : ""}.`
+        );
+      }
+      if (currentCount > required) {
+        throw new Error(`Cannot start: Player count (${currentCount}) exceeds the configured limit of ${required}.`);
+      }
+    } else {
+      // Flexible player count game
+      if (currentCount < config.minPlayers) {
+        const diff = config.minPlayers - currentCount;
+        throw new Error(
+          `Cannot start: ${config.name} requires at least ${config.minPlayers} players to start. ` +
+          `Currently ${currentCount} joined. Waiting for ${diff} more player${diff > 1 ? "s" : ""}.`
+        );
+      }
+      if (currentCount > config.maxPlayers) {
+        throw new Error(`Cannot start: ${config.name} allows a maximum of ${config.maxPlayers} players.`);
+      }
+    }
+
+    // Verify all players are connected
+    const disconnected = room.players.filter(p => p.connected === false);
+    if (disconnected.length > 0) {
+      throw new Error(
+        `Cannot start: Player "${disconnected[0].name}" is disconnected. ` +
+        `Please wait for them to reconnect or remove them from the room.`
+      );
+    }
+
+    // Verify ready status if required
+    if (config.requiresReady) {
+      const notReady = room.players.filter(p => p.userId !== room.hostId && !p.isReady);
+      if (notReady.length > 0) {
+        const names = notReady.map(p => p.name).join(", ");
+        throw new Error(`Cannot start: Waiting for ${names} to mark themselves as Ready.`);
+      }
+    }
+
+    return true;
+  }
+
   startRoom(userId, roomId) {
     const room = this.findRoom(roomId);
     if (!room) throw new Error("Room not found");
-    if (room.hostId !== userId) throw new Error("Only the host can start the game");
 
+    // Perform strict server-side validation
+    this.validateCanStart(room, userId);
+
+    // Prevent concurrent start requests (atomic lock)
+    room.isStarting = true;
     room.status = "active";
     room.lastActive = Date.now();
 
@@ -291,7 +494,7 @@ class RoomManager {
         console.warn("Unknown gameKey:", room.gameKey);
     }
 
-    // Automatically join all sockets in room to game channel
+    // Join all sockets in room to game channel
     const roomChannel = this.io.sockets.adapter.rooms.get(`room_${room._id}`);
     if (roomChannel) {
       for (const socketId of roomChannel) {
@@ -321,7 +524,8 @@ class RoomManager {
     this.io.to(`game_${room._id}`).emit("roomStarted", startPayload);
     this.broadcastRoomUpdate(room);
 
-    return { ok: true, success: true };
+    room.isStarting = false;
+    return { ok: true, success: true, roomId: room._id, gameKey: room.gameKey };
   }
 
   handleGameAction(userId, { roomId, action, payload }, callback) {
@@ -334,6 +538,10 @@ class RoomManager {
     engine.handleAction(userId, action, payload || {}, callback);
   }
 
+  /**
+   * PHASE 9: Reconnection Grace Period Handling
+   * Temporary network drops or page reloads do not immediately strip host status or progress.
+   */
   handleDisconnect(socket) {
     const entry = this.socketToUser.get(socket.id);
     if (!entry) return;
@@ -347,15 +555,32 @@ class RoomManager {
     const player = room.players.find(p => p.userId === userId);
     if (player) {
       player.connected = false;
+      player.disconnectedAt = Date.now();
     }
 
-    // If host disconnected, immediately transfer host to the next active connected player
-    if (room.hostId === userId) {
-      const activeConnected = room.players.find(p => p.connected && p.userId !== userId);
-      if (activeConnected) {
-        room.hostId = activeConnected.userId;
-        activeConnected.isReady = true;
+    // If host disconnected during waiting phase, schedule grace period (60s) before migrating host
+    if (room.hostId === userId && room.status === "waiting") {
+      if (this.disconnectTimers.has(userId)) {
+        clearTimeout(this.disconnectTimers.get(userId));
       }
+
+      const timer = setTimeout(() => {
+        this.disconnectTimers.delete(userId);
+        const r = this.rooms.get(roomId);
+        if (!r) return;
+        const p = r.players.find(pl => pl.userId === userId);
+        if (p && !p.connected && r.status === "waiting") {
+          const nextConnected = r.players.find(pl => pl.connected);
+          if (nextConnected) {
+            r.hostId = nextConnected.userId;
+            nextConnected.isHost = true;
+            nextConnected.isReady = true;
+            this.broadcastRoomUpdate(r);
+          }
+        }
+      }, this.gracePeriod);
+
+      this.disconnectTimers.set(userId, timer);
     }
 
     this.broadcastRoomUpdate(room);
@@ -375,7 +600,7 @@ class RoomManager {
         userId: p.userId,
         name: p.name,
         score: p.score || 0,
-        isReady: p.isReady,
+        isReady: Boolean(p.isReady),
         isHost: p.userId === room.hostId,
         connected: p.connected !== false
       }))

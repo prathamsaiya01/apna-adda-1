@@ -1,9 +1,10 @@
 // apna-adda-backend/index.js
-const express = require("express");
-const http = require("http");
-const { Server } = require("socket.io");
-const cors = require("cors");
-const RoomManager = require("./roomManager");
+try { require('dotenv').config(); } catch (e) {}
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const cors = require('cors');
+const RoomManager = require('./roomManager');
 
 const app = express();
 app.use(express.json());
@@ -20,20 +21,18 @@ const FRONTENDS = [
 app.use(
   cors({
     origin: (origin, cb) => {
-      // allow no-origin (curl/mobile/local tools)
       if (!origin) return cb(null, true);
-      // allow all listed frontends
       if (FRONTENDS.includes(origin)) return cb(null, true);
-      // allow netlify preview deploys or any netlify subdomain for apna adda
       if (origin.endsWith(".netlify.app") || origin.includes("localhost") || origin.includes("127.0.0.1")) {
         return cb(null, true);
       }
-      return cb(null, true); // Allow all for seamless party gaming across devices
+      return cb(null, true); // Allow all party devices
     },
     credentials: true
   })
 );
 
+const PORT = process.env.PORT || 4000;
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -55,13 +54,13 @@ const GAME_CATALOG = [
   { id: "mafia", name: "Mafia", minPlayers: 5, maxPlayers: 16 }
 ];
 
-// ---------------- REST API ----------------
+// ---------------- REST APIS ----------------
 app.post("/api/rooms", (req, res) => {
   try {
     const gameKey = req.body.gameKey || req.body.gameId;
     const hostId = req.body.hostId || req.body.hostUserId;
     const hostName = req.body.hostName || req.body.name;
-    const name = req.body.name || `${hostName || "Party"}'s Room`;
+    const name = req.body.name || `${hostName || "Host"}'s Adda`;
     const maxPlayers = req.body.maxPlayers;
     if (!gameKey) return res.status(400).json({ error: "gameKey required" });
     const room = roomManager.createRoom({ name, gameKey, maxPlayers, hostId, hostName });
@@ -98,7 +97,6 @@ app.get("/api/games/catalog", (req, res) => {
   res.json(GAME_CATALOG);
 });
 
-// Admin panel compatibility endpoints
 app.get("/api/games", (req, res) => {
   if (req.query.catalog === "true") {
     return res.json(GAME_CATALOG);
@@ -167,16 +165,15 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Host starts the game
+  // Host starts the game (with strict server-side validation)
   socket.on("startRoom", ({ roomId, userId }, cb) => {
     try {
-      // Find userId from socket if not explicitly provided
       const userEntry = roomManager.socketToUser.get(socket.id);
       const uid = userId || (userEntry ? userEntry.userId : null);
       const result = roomManager.startRoom(uid, roomId);
       cb && cb(result);
     } catch (err) {
-      console.warn("startRoom error:", err.message);
+      console.warn("startRoom validation error:", err.message);
       cb && cb({ error: err.message });
     }
   });
@@ -205,34 +202,29 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Generic Game Action (routes to specific game engine)
+  // Authoritative Game Action
   socket.on("gameAction", ({ roomId, action, payload }, cb) => {
-    const userEntry = roomManager.socketToUser.get(socket.id);
-    const userId = userEntry ? userEntry.userId : (payload && payload.userId);
-    if (!userId) {
-      return cb && cb({ error: "Unidentified player" });
+    try {
+      const userEntry = roomManager.socketToUser.get(socket.id);
+      const userId = userEntry ? userEntry.userId : null;
+      if (!userId) return cb && cb({ error: "Unidentified socket user" });
+      roomManager.handleGameAction(userId, { roomId, action, payload }, cb);
+    } catch (err) {
+      console.warn("gameAction error:", err.message);
+      cb && cb({ error: err.message });
     }
-    roomManager.handleGameAction(userId, { roomId, action, payload }, cb);
   });
 
-  // Admin join channel
-  socket.on("adminJoin", ({ gameId }, cb) => {
-    socket.join(`admin_${gameId}`);
-    cb && cb({ ok: true });
-  });
-
-  // Disconnect
+  // Disconnection handling with 60s reconnection grace period
   socket.on("disconnect", () => {
     roomManager.handleDisconnect(socket);
-    console.log("Client disconnected:", socket.id);
   });
 });
 
-const PORT = process.env.PORT || 4000;
-if (require.main === module) {
+if (!module.parent && process.env.NODE_ENV !== "test") {
   server.listen(PORT, () => {
-    console.log(`Apna Adda Multiplayer Server running on port ${PORT}`);
+    console.log(`Apna Adda Game Server running on port ${PORT}`);
   });
 }
 
-module.exports = { server, app, io, roomManager };
+module.exports = { app, server, io, roomManager };
