@@ -26,6 +26,7 @@ import MrWhite from './components/MrWhite';
 import HollywoodBollywoodGame from './components/HollywoodBollywoodGame';
 import WhoAmI from './components/WhoAmI';
 import MafiaGame from './components/MafiaGame';
+import BluffMasters from './components/BluffMasters';
 import AdminPanelMultiplayer from './components/AdminPanelMultiplayer';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -112,6 +113,12 @@ function App() {
         setCurrentView("game");
         break;
 
+      case "bluff-masters":
+      case "bluffmasters":
+        setCurrentGame("BluffMasters");
+        setCurrentView("game");
+        break;
+
       default:
         break;
     }
@@ -173,6 +180,16 @@ function App() {
       comingSoon: false,
       isNew: true,
       component: 'Mafia'
+    },
+    {
+      id: 2.5,
+      name: "Bluff Masters",
+      description: "Social deception party game: Spot the secret Bluffer! (3-10 players)",
+      icon: <Users className="w-8 h-8" />,
+      color: "from-amber-500 to-rose-600",
+      comingSoon: false,
+      isNew: true,
+      component: 'BluffMasters'
     },
     {
       id: 3,
@@ -349,6 +366,9 @@ function App() {
           )}
           {currentGame === 'Mafia' && (
             <MafiaGame onBack={handleBackToHome} username={savedUsername} roomId={currentRoomId} />
+          )}
+          {currentGame === 'BluffMasters' && (
+            <BluffMasters onBack={handleBackToHome} username={savedUsername} roomId={currentRoomId} />
           )}
         </>
       )}

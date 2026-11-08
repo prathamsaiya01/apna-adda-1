@@ -46,6 +46,12 @@ type Room = {
 
 const GAME_OPTIONS = [
   {
+    key: "BluffMasters",
+    label: "Bluff Masters",
+    desc: "Spot the secret Bluffer with the different question!",
+    minPlayers: 3
+  },
+  {
     key: "CricketersAtlas",
     label: "Cricketers Atlas",
     desc: "Alphabetical cricketer chain game",

@@ -45,6 +45,7 @@ const io = new Server(server, {
 const roomManager = new RoomManager(io);
 
 const GAME_CATALOG = [
+  { id: "bluff-masters", name: "Bluff Masters", minPlayers: 3, maxPlayers: 10 },
   { id: "cricketers-atlas", name: "Cricketers Atlas", minPlayers: 2, maxPlayers: 10 },
   { id: "mr-white", name: "Mr. White", minPlayers: 3, maxPlayers: 12 },
   { id: "who-am-i", name: "Who Am I?", minPlayers: 2, maxPlayers: 10 },

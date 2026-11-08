@@ -7,10 +7,12 @@ const SpyGameEngine = require("./games/spyGameEngine");
 const DumbCharadesEngine = require("./games/dumbCharadesEngine");
 const HollywoodBollywoodEngine = require("./games/hollywoodBollywoodEngine");
 const MafiaEngine = require("./games/mafiaEngine");
+const BluffMastersEngine = require("./games/bluffMastersEngine");
 
 function normalizeGameKey(key) {
   if (!key) return "";
   const clean = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (clean.includes("bluff")) return "BluffMasters";
   if (clean.includes("atlas") || clean.includes("cricketer")) return "CricketersAtlas";
   if (clean.includes("white")) return "MrWhite";
   if (clean.includes("whoami")) return "WhoAmI";
@@ -22,6 +24,14 @@ function normalizeGameKey(key) {
 }
 
 const GAME_CONFIGS = {
+  BluffMasters: {
+    name: "Bluff Masters",
+    minPlayers: 3,
+    maxPlayers: 10,
+    exactCount: false,
+    requiresReady: false,
+    description: "Social deception party game: Spot the Bluffer with the different question! (3-10 players)"
+  },
   Mafia: {
     name: "Mafia",
     minPlayers: 5,
@@ -469,6 +479,9 @@ class RoomManager {
     // Instantiate appropriate game engine
     let engine = null;
     switch (room.gameKey) {
+      case "BluffMasters":
+        engine = new BluffMastersEngine(room, this.io);
+        break;
       case "CricketersAtlas":
         engine = new CricketersAtlasEngine(room, this.io);
         break;
