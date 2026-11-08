@@ -1,6 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Users, TowerControl as GameController2, Skull, Crown, Zap, Heart, Star, Lock, Play, Settings, Trophy, Wifi, Eye, Target, Film } from 'lucide-react';
-import { HelpCircle } from 'lucide-react';
+import {
+  Users,
+  TowerControl as GameController2,
+  Skull,
+  Crown,
+  Zap,
+  Heart,
+  Lock,
+  Play,
+  Settings,
+  Trophy,
+  Wifi,
+  Eye,
+  Target,
+  Film,
+  HelpCircle
+} from 'lucide-react';
 import AdminPanel from './components/AdminPanel';
 import CricketersAtlas from './components/CricketersAtlas';
 import RoomSystem from './components/RoomSystem';
@@ -12,6 +27,7 @@ import HollywoodBollywoodGame from './components/HollywoodBollywoodGame';
 import WhoAmI from './components/WhoAmI';
 import MafiaGame from './components/MafiaGame';
 import AdminPanelMultiplayer from './components/AdminPanelMultiplayer';
+import ErrorBoundary from './components/ErrorBoundary';
 
 interface GameSlot {
   id: number;
@@ -20,6 +36,7 @@ interface GameSlot {
   icon: React.ReactNode;
   color: string;
   comingSoon: boolean;
+  isNew?: boolean;
   component?: string;
 }
 
@@ -27,8 +44,7 @@ function App() {
   const [username, setUsername] = useState('');
   const [showUsernameInput, setShowUsernameInput] = useState(true);
   const [savedUsername, setSavedUsername] = useState('');
-const [currentView, setCurrentView] = useState<'home' | 'admin' | 'game' | 'rooms' | 'atlas' | 'multiplayer-admin'>('home');
-
+  const [currentView, setCurrentView] = useState<'home' | 'admin' | 'game' | 'rooms' | 'atlas' | 'multiplayer-admin'>('home');
   const [currentGame, setCurrentGame] = useState<string | null>(null);
   const [currentRoomId, setCurrentRoomId] = useState<string | null>(null);
 
@@ -39,6 +55,7 @@ const [currentView, setCurrentView] = useState<'home' | 'admin' | 'game' | 'room
       setShowUsernameInput(false);
     }
   }, []);
+
   // When coming from external lobby (?room=&game=...), auto-open game
   useEffect(() => {
     // wait until username screen is done
@@ -54,39 +71,48 @@ const [currentView, setCurrentView] = useState<'home' | 'admin' | 'game' | 'room
       setCurrentRoomId(roomCode);
     }
 
-    switch (gameKey) {
+    switch (gameKey.toLowerCase()) {
       case "atlas-games":
-        // open Atlas games section
+      case "cricketersatlas":
         setCurrentView("atlas");
         break;
 
       case "mr-white":
+      case "mrwhite":
         setCurrentGame("MrWhite");
         setCurrentView("game");
         break;
 
       case "who-am-i":
+      case "whoami":
         setCurrentGame("WhoAmI");
         setCurrentView("game");
         break;
 
       case "spy-game":
+      case "spygame":
         setCurrentGame("SpyGame");
         setCurrentView("game");
         break;
 
       case "dumb-charades":
+      case "dumbcharades":
         setCurrentGame("DumbCharades");
         setCurrentView("game");
         break;
 
       case "hollywood-bollywood":
+      case "hollywoodbollywoodgame":
         setCurrentGame("HollywoodBollywoodGame");
         setCurrentView("game");
         break;
 
+      case "mafia":
+        setCurrentGame("Mafia");
+        setCurrentView("game");
+        break;
+
       default:
-        // unknown gameKey → just stay on home
         break;
     }
   }, [showUsernameInput]);
@@ -140,6 +166,16 @@ const [currentView, setCurrentView] = useState<'home' | 'admin' | 'game' | 'room
     },
     {
       id: 2,
+      name: "Mafia",
+      description: "Classic social deduction: Town vs Mafia (Offline & Online)",
+      icon: <Skull className="w-8 h-8" />,
+      color: "from-red-600 to-purple-800",
+      comingSoon: false,
+      isNew: true,
+      component: 'Mafia'
+    },
+    {
+      id: 3,
       name: "Atlas Games",
       description: "Alphabetical chain games across categories",
       icon: <Trophy className="w-8 h-8" />,
@@ -148,7 +184,7 @@ const [currentView, setCurrentView] = useState<'home' | 'admin' | 'game' | 'room
       component: 'atlas'
     },
     {
-      id: 3,
+      id: 4,
       name: "Mr. White",
       description: "Find who has the different word",
       icon: <Target className="w-8 h-8" />,
@@ -157,7 +193,7 @@ const [currentView, setCurrentView] = useState<'home' | 'admin' | 'game' | 'room
       component: 'MrWhite'
     },
     {
-      id: 4,
+      id: 5,
       name: "Hollywood-Bollywood",
       description: "Guess Actor, Actress, Movie & Song from initials",
       icon: <Film className="w-8 h-8" />,
@@ -166,7 +202,7 @@ const [currentView, setCurrentView] = useState<'home' | 'admin' | 'game' | 'room
       component: 'HollywoodBollywoodGame'
     },
     {
-      id: 5,
+      id: 6,
       name: "Who Am I?",
       description: "Guess the celebrity through Yes/No questions",
       icon: <HelpCircle className="w-8 h-8" />,
@@ -175,7 +211,7 @@ const [currentView, setCurrentView] = useState<'home' | 'admin' | 'game' | 'room
       component: 'WhoAmI'
     },
     {
-      id: 6,
+      id: 7,
       name: "Spy Game",
       description: "Find the spy among your friends",
       icon: <Eye className="w-8 h-8" />,
@@ -184,27 +220,9 @@ const [currentView, setCurrentView] = useState<'home' | 'admin' | 'game' | 'room
       component: 'SpyGame'
     },
     {
-      id: 7,
-      name: "Mafia",
-      description: "Social deduction: Town vs Mafia (Offline & Online)",
-      icon: <Skull className="w-8 h-8" />,
-      color: "from-red-600 to-purple-800",
-      comingSoon: false,
-      component: 'Mafia'
-    },
-
-    {
-      id: 7,
-      name: "Bollywood Quiz",
-      description: "Test your Bollywood knowledge",
-      icon: <Crown className="w-8 h-8" />,
-      color: "from-yellow-400 to-orange-500",
-      comingSoon: true
-    },
-    {
       id: 8,
       name: "Dumb Charades",
-      description: "Act out movies and more",
+      description: "Act out movies without speaking",
       icon: <GameController2 className="w-8 h-8" />,
       color: "from-blue-400 to-cyan-500",
       comingSoon: false,
@@ -212,6 +230,14 @@ const [currentView, setCurrentView] = useState<'home' | 'admin' | 'game' | 'room
     },
     {
       id: 9,
+      name: "Bollywood Quiz",
+      description: "Test your Bollywood knowledge",
+      icon: <Crown className="w-8 h-8" />,
+      color: "from-yellow-400 to-orange-500",
+      comingSoon: true
+    },
+    {
+      id: 10,
       name: "Rapid Fire",
       description: "Quick questions, quick answers",
       icon: <Zap className="w-8 h-8" />,
@@ -219,7 +245,7 @@ const [currentView, setCurrentView] = useState<'home' | 'admin' | 'game' | 'room
       comingSoon: true
     },
     {
-      id: 10,
+      id: 11,
       name: "Name-Place-Animal",
       description: "The classic letter game",
       icon: <Heart className="w-8 h-8" />,
@@ -227,7 +253,7 @@ const [currentView, setCurrentView] = useState<'home' | 'admin' | 'game' | 'room
       comingSoon: true
     },
     {
-      id: 11,
+      id: 12,
       name: "Guess the Song",
       description: "Identify songs from clips",
       icon: <Play className="w-8 h-8" />,
@@ -278,142 +304,159 @@ const [currentView, setCurrentView] = useState<'home' | 'admin' | 'game' | 'room
     );
   }
 
-if (currentView === 'admin') {
-  return <AdminPanel onBack={handleBackToHome} setCurrentView={setCurrentView} />;
-}
-
-if (currentView === 'multiplayer-admin') {
-  return <AdminPanelMultiplayer onBack={handleBackToHome} />;
-}
-
-  if (currentView === 'rooms') {
-    return <RoomSystem onBack={handleBackToHome} username={savedUsername} onJoinGame={handleJoinGame} />;
-  }
-
-  if (currentView === 'atlas') {
-    return <AtlasSection onBack={handleBackToHome} username={savedUsername} roomId={currentRoomId} />;
-  }
-
-  if (currentView === 'game' && currentGame) {
-    if (currentGame === 'CricketersAtlas') {
-      return <CricketersAtlas onBack={handleBackToHome} username={savedUsername} roomId={currentRoomId} />;
-    } else if (currentGame === 'SpyGame') {
-      return <SpyGame onBack={handleBackToHome} username={savedUsername} roomId={currentRoomId} />;
-    } else if (currentGame === 'DumbCharades') {
-      return <DumbCharades onBack={handleBackToHome} username={savedUsername} roomId={currentRoomId} />;
-    } else if (currentGame === 'MrWhite') {
-      return <MrWhite onBack={handleBackToHome} username={savedUsername} roomId={currentRoomId} />;
-    } else if (currentGame === 'HollywoodBollywoodGame') {
-      return <HollywoodBollywoodGame onBack={handleBackToHome} username={savedUsername} roomId={currentRoomId} />;
-    } else if (currentGame === 'WhoAmI') {
-      return <WhoAmI onBack={handleBackToHome} username={savedUsername} roomId={currentRoomId} />;
-    } else if (currentGame === 'Mafia') {
-      return <MafiaGame onBack={handleBackToHome} username={savedUsername} roomId={currentRoomId} />;
-    }
-  }
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-purple-900">
-      {/* Header */}
-      <header className="bg-white/95 backdrop-blur-sm shadow-lg border-b border-white/20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-to-r from-orange-500 to-purple-600 rounded-full flex items-center justify-center shadow-lg">
-                <Users className="w-5 h-5 text-white" />
-              </div>
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-orange-600 bg-clip-text text-transparent">
-                ApnaAdda
-              </h1>
-            </div>
-            
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                <span className="text-slate-600">Welcome,</span>
-                <span className="font-semibold text-purple-600">{savedUsername}</span>
-              </div>
-              {savedUsername === 'Pratham_is_Admin' && (
-                <button
-                  onClick={() => setCurrentView('admin')}
-                  className="flex items-center space-x-1 px-3 py-1 bg-orange-100 text-orange-600 rounded-lg hover:bg-orange-200 transition-colors duration-200"
-                >
-                  <Settings className="w-4 h-4" />
-                  <span className="text-sm">Admin</span>
-                </button>
-              )}
-              <button
-                onClick={handleChangeUsername}
-                className="text-sm text-slate-500 hover:text-purple-600 transition-colors duration-200"
-              >
-                Change
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
+    <ErrorBoundary onReset={handleBackToHome}>
+      {currentView === 'admin' && (
+        <AdminPanel onBack={handleBackToHome} setCurrentView={setCurrentView} />
+      )}
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="text-center mb-12">
-          <h2 className="text-4xl font-bold text-white mb-4">
-            Choose Your Game
-          </h2>
-          <p className="text-lg text-slate-300 max-w-2xl mx-auto">
-            Get ready for some fun! Select from our collection of classic Indian party games 
-            and create unforgettable memories with your friends and family.
-          </p>
-        </div>
+      {currentView === 'multiplayer-admin' && (
+        <AdminPanelMultiplayer onBack={handleBackToHome} />
+      )}
 
-        {/* Games Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {gameSlots.map((game) => (
-            <div
-              key={game.id}
-              className="group relative bg-white/95 backdrop-blur-sm rounded-xl shadow-lg hover:shadow-2xl transform hover:-translate-y-2 transition-all duration-300 overflow-hidden border border-white/20"
-            >
-              <div className={`absolute inset-0 bg-gradient-to-br ${game.color} opacity-0 group-hover:opacity-5 transition-opacity duration-300`} />
-              
-              <div className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className={`p-3 rounded-lg bg-gradient-to-r ${game.color} text-white`}>
-                    {game.icon}
+      {currentView === 'rooms' && (
+        <RoomSystem onBack={handleBackToHome} username={savedUsername} onJoinGame={handleJoinGame} />
+      )}
+
+      {currentView === 'atlas' && (
+        <AtlasSection onBack={handleBackToHome} username={savedUsername} roomId={currentRoomId} />
+      )}
+
+      {currentView === 'game' && currentGame && (
+        <>
+          {currentGame === 'CricketersAtlas' && (
+            <CricketersAtlas onBack={handleBackToHome} username={savedUsername} roomId={currentRoomId} />
+          )}
+          {currentGame === 'SpyGame' && (
+            <SpyGame onBack={handleBackToHome} username={savedUsername} roomId={currentRoomId} />
+          )}
+          {currentGame === 'DumbCharades' && (
+            <DumbCharades onBack={handleBackToHome} username={savedUsername} roomId={currentRoomId} />
+          )}
+          {currentGame === 'MrWhite' && (
+            <MrWhite onBack={handleBackToHome} username={savedUsername} roomId={currentRoomId} />
+          )}
+          {currentGame === 'HollywoodBollywoodGame' && (
+            <HollywoodBollywoodGame onBack={handleBackToHome} username={savedUsername} roomId={currentRoomId} />
+          )}
+          {currentGame === 'WhoAmI' && (
+            <WhoAmI onBack={handleBackToHome} username={savedUsername} roomId={currentRoomId} />
+          )}
+          {currentGame === 'Mafia' && (
+            <MafiaGame onBack={handleBackToHome} username={savedUsername} roomId={currentRoomId} />
+          )}
+        </>
+      )}
+
+      {currentView === 'home' && (
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-purple-900">
+          {/* Header */}
+          <header className="bg-white/95 backdrop-blur-sm shadow-lg border-b border-white/20">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="flex items-center justify-between h-16">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-gradient-to-r from-orange-500 to-purple-600 rounded-full flex items-center justify-center shadow-lg">
+                    <Users className="w-5 h-5 text-white" />
                   </div>
-                  {game.comingSoon && (
-                    <div className="flex items-center space-x-1 text-gray-500">
-                      <Lock className="w-4 h-4" />
-                      <span className="text-xs font-medium">Coming Soon</span>
-                    </div>
-                  )}
+                  <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-orange-600 bg-clip-text text-transparent">
+                    ApnaAdda
+                  </h1>
                 </div>
                 
-                <h3 className="text-xl font-bold text-slate-900 mb-2">{game.name}</h3>
-                <p className="text-slate-600 mb-4">{game.description}</p>
-                
-                <button
-                  onClick={() => game.component && handleGameSelect(game.component)}
-                  className={`w-full py-3 px-4 rounded-lg font-semibold transition-all duration-200 ${
-                    game.comingSoon
-                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                      : `bg-gradient-to-r ${game.color} text-white hover:shadow-lg transform hover:scale-105`
-                  }`}
-                  disabled={game.comingSoon}
-                >
-                  {game.comingSoon ? 'Coming Soon' : 'Play Now'}
-                </button>
+                <div className="flex items-center space-x-4">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-slate-600">Welcome,</span>
+                    <span className="font-semibold text-purple-600">{savedUsername}</span>
+                  </div>
+                  {savedUsername === 'Pratham_is_Admin' && (
+                    <button
+                      onClick={() => setCurrentView('admin')}
+                      className="flex items-center space-x-1 px-3 py-1 bg-orange-100 text-orange-600 rounded-lg hover:bg-orange-200 transition-colors duration-200"
+                    >
+                      <Settings className="w-4 h-4" />
+                      <span className="text-sm">Admin</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={handleChangeUsername}
+                    className="text-sm text-slate-500 hover:text-purple-600 transition-colors duration-200"
+                  >
+                    Change
+                  </button>
+                </div>
               </div>
             </div>
-          ))}
-        </div>
+          </header>
 
-        {/* Footer Note */}
-        <div className="text-center mt-16">
-          <div className="inline-flex items-center space-x-2 text-slate-300">
-            <Heart className="w-4 h-4 text-orange-500" />
-            <span>More games coming soon to make your adda even more exciting!</span>
-          </div>
+          {/* Main Content */}
+          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div className="text-center mb-12">
+              <h2 className="text-4xl font-bold text-white mb-4">
+                Choose Your Game
+              </h2>
+              <p className="text-lg text-slate-300 max-w-2xl mx-auto">
+                Get ready for some fun! Select from our collection of classic Indian party games 
+                and create unforgettable memories with your friends and family.
+              </p>
+            </div>
+
+            {/* Games Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {gameSlots.map((game) => (
+                <div
+                  key={game.id}
+                  className="group relative bg-white/95 backdrop-blur-sm rounded-xl shadow-lg hover:shadow-2xl transform hover:-translate-y-2 transition-all duration-300 overflow-hidden border border-white/20"
+                >
+                  <div className={`absolute inset-0 bg-gradient-to-br ${game.color} opacity-0 group-hover:opacity-5 transition-opacity duration-300`} />
+                  
+                  <div className="p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className={`p-3 rounded-lg bg-gradient-to-r ${game.color} text-white shadow`}>
+                        {game.icon}
+                      </div>
+                      {game.comingSoon && (
+                        <div className="flex items-center space-x-1 text-gray-500">
+                          <Lock className="w-4 h-4" />
+                          <span className="text-xs font-medium">Coming Soon</span>
+                        </div>
+                      )}
+                      {game.isNew && (
+                        <span className="px-2.5 py-1 bg-gradient-to-r from-red-500 to-pink-500 text-white text-[11px] font-black rounded-full uppercase tracking-wider shadow animate-pulse">
+                          NEW GAME
+                        </span>
+                      )}
+                    </div>
+                    
+                    <h3 className="text-xl font-bold text-slate-900 mb-2">{game.name}</h3>
+                    <p className="text-slate-600 mb-4">{game.description}</p>
+                    
+                    <button
+                      onClick={() => game.component && handleGameSelect(game.component)}
+                      className={`w-full py-3 px-4 rounded-lg font-semibold transition-all duration-200 ${
+                        game.comingSoon
+                          ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                          : `bg-gradient-to-r ${game.color} text-white hover:shadow-lg transform hover:scale-105`
+                      }`}
+                      disabled={game.comingSoon}
+                    >
+                      {game.comingSoon ? 'Coming Soon' : 'Play Now'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer Note */}
+            <div className="text-center mt-16">
+              <div className="inline-flex items-center space-x-2 text-slate-300">
+                <Heart className="w-4 h-4 text-orange-500" />
+                <span>More games coming soon to make your adda even more exciting!</span>
+              </div>
+            </div>
+          </main>
         </div>
-      </main>
-    </div>
+      )}
+    </ErrorBoundary>
   );
 }
 

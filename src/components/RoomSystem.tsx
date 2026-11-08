@@ -112,6 +112,19 @@ const RoomSystem: React.FC<RoomSystemProps> = ({ onBack, username, onJoinGame })
   const [copiedLink, setCopiedLink] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
+  const [isConnected, setIsConnected] = useState(socket.connected);
+
+  useEffect(() => {
+    const onConnect = () => setIsConnected(true);
+    const onDisconnect = () => setIsConnected(false);
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+    setIsConnected(socket.connected);
+    return () => {
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
+    };
+  }, []);
 
   // Auto-fill code from URL query param if present
   useEffect(() => {
@@ -294,8 +307,10 @@ const RoomSystem: React.FC<RoomSystemProps> = ({ onBack, username, onJoinGame })
   };
 
   const handleStartGame = () => {
-    if (!currentRoom) return;
+    if (!currentRoom || isStarting) return;
+    setIsStarting(true);
     socket.emit("startRoom", { roomId: currentRoom._id, userId }, (res: any) => {
+      setIsStarting(false);
       if (res?.error) {
         alert(res.error);
       }
@@ -338,13 +353,34 @@ const RoomSystem: React.FC<RoomSystemProps> = ({ onBack, username, onJoinGame })
     setTimeout(() => setCopiedLink(false), 2500);
   };
 
-  const isHost = currentRoom ? currentRoom.hostId === userId : false;
+  const hostPlayer = currentRoom?.players?.find(p => p.isHost || p.userId === currentRoom.hostId);
+  const hostId = currentRoom?.hostId || hostPlayer?.userId || (currentRoom?.players?.[0]?.userId ?? "");
+  const isHost = Boolean(
+    (hostId && hostId === userId) ||
+    (hostPlayer && hostPlayer.userId === userId) ||
+    (currentRoom?.players?.length && currentRoom.players[0]?.userId === userId && !currentRoom.players.some(p => p.isHost && p.userId !== userId))
+  );
+
   const selectedGameInfo = GAME_OPTIONS.find(g => g.key === (currentRoom?.gameKey || selectedGame));
+  const isExactGame = (currentRoom?.gameKey || selectedGame) === "Mafia";
+  const requiredCount = isExactGame
+    ? (currentRoom?.maxPlayers || 6)
+    : (selectedGameInfo?.minPlayers || 2);
   const minRequired = selectedGameInfo?.minPlayers || 2;
   const currentCount = currentRoom?.players?.length || 0;
-  const allOtherPlayersReady =
-    currentRoom?.players?.filter(p => p.userId !== currentRoom.hostId).every(p => p.isReady) ?? true;
-  const canStartGame = isHost && currentCount >= minRequired && allOtherPlayersReady;
+
+  const hasRequiredPlayers = isExactGame
+    ? currentCount === requiredCount
+    : currentCount >= minRequired;
+
+  const disconnectedPlayers = currentRoom?.players?.filter(p => p.connected === false) || [];
+  const requiresReady = isExactGame;
+  const unreadyPlayers = requiresReady
+    ? currentRoom?.players?.filter(p => (p.userId !== hostId && !p.isHost) && !p.isReady) || []
+    : [];
+  const allOtherPlayersReady = unreadyPlayers.length === 0;
+
+  const canStartGame = isHost && hasRequiredPlayers && disconnectedPlayers.length === 0 && allOtherPlayersReady && !isStarting;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-purple-900 text-white px-4 py-6">
@@ -368,9 +404,25 @@ const RoomSystem: React.FC<RoomSystemProps> = ({ onBack, username, onJoinGame })
             <span>{view === "home" ? "Back to Games" : view === "lobby" ? "Leave Lobby" : "Back"}</span>
           </button>
 
-          <div className="flex items-center space-x-3 bg-white/10 px-4 py-2 rounded-full border border-white/20">
-            <Wifi className="w-4 h-4 text-emerald-400 animate-pulse" />
-            <span className="text-sm font-semibold tracking-wide">Apna Adda Multiplayer</span>
+          <div className="flex items-center space-x-2">
+            <div className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-full border ${
+              isConnected
+                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                : "bg-amber-500/10 border-amber-500/30 text-amber-300"
+            }`}>
+              <Wifi className={`w-4 h-4 ${isConnected ? "text-emerald-400 animate-pulse" : "text-amber-400"}`} />
+              <span className="text-xs font-semibold tracking-wide">
+                {isConnected ? "Live Server" : "Reconnecting..."}
+              </span>
+            </div>
+            {!isConnected && (
+              <button
+                onClick={() => socket.connect()}
+                className="text-xs px-2.5 py-1 bg-white/10 hover:bg-white/20 rounded-full text-white border border-white/20 transition"
+              >
+                Retry
+              </button>
+            )}
           </div>
         </div>
 
@@ -658,8 +710,8 @@ const RoomSystem: React.FC<RoomSystemProps> = ({ onBack, username, onJoinGame })
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                {currentRoom.players.map(p => {
-                  const isPlayerHost = p.userId === hostId || p.isHost;
+                {currentRoom.players.map((p, idx) => {
+                  const isPlayerHost = Boolean(p.isHost || p.userId === hostId || (idx === 0 && !currentRoom.players.some(x => x.isHost)));
                   const isMe = p.userId === userId;
 
                   return (
@@ -722,16 +774,24 @@ const RoomSystem: React.FC<RoomSystemProps> = ({ onBack, username, onJoinGame })
                     <button
                       disabled={!canStartGame}
                       onClick={handleStartGame}
-                      className="w-full py-4 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 text-white font-extrabold text-lg shadow-lg hover:shadow-xl hover:scale-[1.01] active:scale-[0.99] transition disabled:opacity-50 flex items-center justify-center space-x-2"
+                      className="w-full py-4 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 text-white font-extrabold text-lg shadow-lg hover:shadow-xl hover:scale-[1.01] active:scale-[0.99] transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
                     >
                       <Play className="w-5 h-5 fill-current" />
-                      <span>Start Game for Everyone</span>
+                      <span>{isStarting ? "Starting Game..." : "Start Game for Everyone"}</span>
                     </button>
                     {!canStartGame && (
                       <p className="text-xs text-slate-500 text-center mt-2">
-                        {currentCount < minRequired
-                          ? `Need at least ${minRequired} players to start (currently ${currentCount}). Invite friends using code "${currentRoom.code}".`
-                          : "Waiting for all players to click Ready..."}
+                        {!hasRequiredPlayers
+                          ? isExactGame
+                            ? `Mafia requires exactly ${requiredCount} players to balance town and mafia roles (currently ${currentCount}/${requiredCount}).`
+                            : `Need at least ${minRequired} players to start (currently ${currentCount}/${currentRoom.maxPlayers}). Invite friends using code "${currentRoom.code}".`
+                          : disconnectedPlayers.length > 0
+                          ? `Waiting for disconnected player "${disconnectedPlayers[0]?.name}" to reconnect.`
+                          : !allOtherPlayersReady
+                          ? `Waiting for players to mark Ready (${currentRoom.players.filter(p => p.isReady || p.isHost || p.userId === hostId).length}/${currentRoom.players.length} ready)...`
+                          : isStarting
+                          ? "Initializing game session..."
+                          : ""}
                       </p>
                     )}
                   </div>
@@ -740,7 +800,7 @@ const RoomSystem: React.FC<RoomSystemProps> = ({ onBack, username, onJoinGame })
                     {currentRoom.status === "active" ? (
                       <p className="font-semibold text-emerald-600">Game starting now! Joining...</p>
                     ) : (
-                      <p>Waiting for the host to start the game. Make sure you are marked as Ready!</p>
+                      <p>Waiting for the host to start the game. {requiresReady ? "Make sure you are marked as Ready!" : "Hang tight!"}</p>
                     )}
                   </div>
                 )}

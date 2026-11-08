@@ -1,19 +1,10 @@
-// server/index.js
+// apna-adda-backend/index.js
 try { require('dotenv').config(); } catch (e) {}
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
-const mongoose = require('mongoose');
 const RoomManager = require('./roomManager');
-
-// Optional MongoDB connection for persistent questions/quiz
-const MONGO_URI = process.env.MONGO_URI;
-if (MONGO_URI) {
-  mongoose.connect(MONGO_URI)
-    .then(() => console.log("MongoDB Connected successfully"))
-    .catch(err => console.warn("MongoDB connection warning (falling back to memory):", err.message));
-}
 
 const app = express();
 app.use(express.json());
