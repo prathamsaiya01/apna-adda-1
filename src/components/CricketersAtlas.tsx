@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Trophy, Clock, Users, CheckCircle, XCircle, Loader, Wifi } from 'lucide-react';
-import { socket, getUserId } from '../socket';
+import { socket, getUserId, getApiUrl } from '../socket';
 
 interface Player {
   id: string;
@@ -57,24 +57,62 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
   useEffect(() => {
     if (!isMultiplayer || !roomId) return;
 
+    // Proactively fetch room data from API to initialize players list immediately
+    fetch(`${getApiUrl()}/api/rooms/${roomId}`)
+      .then(r => r.json())
+      .then(roomData => {
+        if (roomData && Array.isArray(roomData.players) && roomData.players.length > 0) {
+          setPlayers(prev => {
+            if (prev.length <= 1) {
+              return roomData.players.map((rp: any, idx: number) => ({
+                id: rp.userId || rp._id || String(idx),
+                userId: rp.userId,
+                name: rp.name,
+                score: rp.score || 0,
+                isActive: rp.connected !== false,
+                timeoutCount: 0,
+                isEliminated: false
+              }));
+            }
+            return prev;
+          });
+        }
+      })
+      .catch(err => console.warn("Could not pre-fetch room players:", err));
+
     // Join game channel
     socket.emit('joinGame', { roomId, userId }, (res: any) => {
       if (res?.error) console.warn('joinGame error:', res.error);
     });
 
     const handleGameState = (payload: any) => {
-      if (payload.gameKey !== 'CricketersAtlas') return;
-      const s = payload.state;
+      const gKey = (payload.gameKey || '').toLowerCase();
+      if (gKey && gKey !== 'cricketersatlas' && !gKey.includes('atlas') && !gKey.includes('cricketer')) return;
+      const s = payload.state || payload;
       if (!s) return;
 
-      setPlayers(s.players || []);
-      setCurrentPlayerIndex(s.currentPlayerIndex ?? 0);
-      setRequiredLetter(s.requiredLetter || '');
-      setGameHistory(s.gameHistory || []);
-      if (typeof s.turnTimer === 'number') setTurnTimer(s.turnTimer);
+      if (Array.isArray(s.players) && s.players.length > 0) {
+        setPlayers(s.players);
+      }
+      if (typeof s.currentPlayerIndex === 'number') {
+        setCurrentPlayerIndex(s.currentPlayerIndex);
+      }
+      if (s.requiredLetter !== undefined) {
+        setRequiredLetter(s.requiredLetter);
+      }
+      if (Array.isArray(s.gameHistory)) {
+        setGameHistory(s.gameHistory);
+      }
+      if (typeof s.turnTimer === 'number') {
+        setTurnTimer(s.turnTimer);
+      }
       setGameStarted(true);
-      setGameWinner(s.gameWinner || '');
-      setEliminatedMessage(s.eliminatedMessage || '');
+      if (s.gameWinner !== undefined) {
+        setGameWinner(s.gameWinner);
+      }
+      if (s.eliminatedMessage !== undefined) {
+        setEliminatedMessage(s.eliminatedMessage);
+      }
 
       if (s.pendingConsideration) {
         setPendingMove(s.pendingConsideration);
@@ -85,6 +123,24 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
       }
     };
 
+    const handlePlayersUpdate = (roomPlayers: any[]) => {
+      if (!Array.isArray(roomPlayers) || roomPlayers.length === 0) return;
+      setPlayers(prev => {
+        return roomPlayers.map((rp, idx) => {
+          const existing = prev.find(p => p.userId === rp.userId || p.name === rp.name);
+          return {
+            id: rp.userId || rp._id || rp.name || String(idx),
+            userId: rp.userId,
+            name: rp.name,
+            score: typeof rp.score === 'number' ? rp.score : existing?.score || 0,
+            isActive: rp.connected !== false,
+            timeoutCount: existing?.timeoutCount || 0,
+            isEliminated: existing?.isEliminated || false
+          };
+        });
+      });
+    };
+
     const handleTimerTick = (data: { turnTimer?: number }) => {
       if (typeof data.turnTimer === 'number') {
         setTurnTimer(data.turnTimer);
@@ -92,10 +148,12 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
     };
 
     socket.on('gameStateUpdate', handleGameState);
+    socket.on('playersUpdate', handlePlayersUpdate);
     socket.on('timerTick', handleTimerTick);
 
     return () => {
       socket.off('gameStateUpdate', handleGameState);
+      socket.off('playersUpdate', handlePlayersUpdate);
       socket.off('timerTick', handleTimerTick);
     };
   }, [isMultiplayer, roomId, userId]);
@@ -213,47 +271,6 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
 
   const handleConsiderMove = (accept: boolean) => {
     if (isMultiplayer && roomId) {
-      socket.emit('gameAction', {
-        roomId,
-        action: 'voteConsideration',
-        payload: { accept }
-      }, (res: any) => {
-        if (res?.error) alert(res.error);
-      });
-      setShowConsiderDialog(false);
-      setPendingMove(null);
-      setCurrentInput('');
-      return;
-    }
-
-    // Local single player fallback
-    if (!pendingMove) return;
-    const move: GameMove = {
-      player: players[currentPlayerIndex].name,
-      cricketer: accept ? pendingMove.cricketer : `${pendingMove.cricketer} [REJECTED]`,
-      letter: pendingMove.firstLetter,
-      timestamp: new Date().toISOString(),
-      isValid: accept
-    };
-
-    setGameHistory(prev => [...prev, move]);
-    if (accept) {
-      setPlayers(prev => prev.map((player, index) =>
-        index === currentPlayerIndex ? { ...player, score: player.score + 1 } : player
-      ));
-      setRequiredLetter(pendingMove.lastLetter.toUpperCase());
-    }
-    nextLocalActivePlayer();
-    setShowConsiderDialog(false);
-    setPendingMove(null);
-    setCurrentInput('');
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!currentInput.trim() || isValidating) return;
-
-    if (isMultiplayer && roomId) {
       const activePlayer = players[currentPlayerIndex];
       const isMyTurn = activePlayer && (activePlayer.userId === userId || activePlayer.name === username);
       if (!isMyTurn) {
@@ -262,6 +279,11 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
       }
 
       setIsValidating(true);
+      const actionTimeout = setTimeout(() => {
+        setIsValidating(false);
+        alert("The server took too long to validate. Please check your connection and try again.");
+      }, 10000);
+
       socket.emit(
         'gameAction',
         {
@@ -270,6 +292,7 @@ const CricketersAtlas: React.FC<CricketersAtlasProps> = ({ onBack, username, roo
           payload: { name: currentInput.trim(), userId }
         },
         (res: any) => {
+          clearTimeout(actionTimeout);
           setIsValidating(false);
           if (res?.error) {
             alert(res.error);

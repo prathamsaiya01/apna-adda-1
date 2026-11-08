@@ -206,7 +206,7 @@ io.on("connection", (socket) => {
   socket.on("gameAction", ({ roomId, action, payload }, cb) => {
     try {
       const userEntry = roomManager.socketToUser.get(socket.id);
-      const userId = userEntry ? userEntry.userId : null;
+      const userId = (userEntry && userEntry.userId) || (payload && payload.userId);
       if (!userId) return cb && cb({ error: "Unidentified socket user" });
       roomManager.handleGameAction(userId, { roomId, action, payload }, cb);
     } catch (err) {

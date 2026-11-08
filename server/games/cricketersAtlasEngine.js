@@ -91,6 +91,8 @@ class CricketersAtlasEngine {
     };
     this.io.to(`game_${this.room._id}`).emit('gameStateUpdate', payload);
     this.io.to(`room_${this.room._id}`).emit('gameStateUpdate', payload);
+    this.io.to(`game_${this.room._id}`).emit('playersUpdate', this.state.players);
+    this.io.to(`room_${this.room._id}`).emit('playersUpdate', this.state.players);
   }
 
   start() {
@@ -170,7 +172,8 @@ class CricketersAtlasEngine {
     const curr = this.state.players[this.state.currentPlayerIndex];
 
     if (action === 'submitCricketer') {
-      if (curr.userId !== userId) {
+      const isMatch = curr.userId === userId || curr.id === userId;
+      if (!isMatch) {
         return callback && callback({ error: "Not your turn!" });
       }
       const rawName = (payload.name || payload.cricketer || '').trim();
