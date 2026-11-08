@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
   ArrowLeft,
   Users,
@@ -27,7 +27,8 @@ import {
   Flame,
   ShieldAlert,
   ThumbsUp,
-  UserCheck
+  UserCheck,
+  Edit3
 } from "lucide-react";
 import { socket, getUserId } from "../socket";
 import {
@@ -35,7 +36,8 @@ import {
   PASS_AND_PLAY_CROWD_QUESTIONS,
   PASS_AND_PLAY_FRIENDS_QUESTIONS,
   CrowdQuestion,
-  FriendsQuestion
+  FriendsQuestion,
+  clientMatchAnswer
 } from "../data/whatsTheMajorityData";
 
 interface WhatsTheMajorityProps {
@@ -69,7 +71,9 @@ interface RankedOption {
 interface PlayerBreakdown {
   userId: string;
   name: string;
-  chosenOptionText?: string;
+  submittedText?: string;
+  canonicalAnswer?: string;
+  isMatched?: boolean;
   votedForName?: string;
   rank?: number | null;
   pointsAwarded: number;
@@ -79,6 +83,7 @@ interface PlayerBreakdown {
 
 interface RevealData {
   mode: string;
+  answerFormat?: "FIXED_OPTIONS" | "OPEN_ENDED";
   rankedOptions?: RankedOption[];
   majorityUserIds?: string[];
   majorityPlayerNames?: string;
@@ -128,6 +133,7 @@ export const WhatsTheMajority: React.FC<WhatsTheMajorityProps> = ({
   // -------------------------------------------------------------------
   const [gameState, setGameState] = useState<MultiplayerState | null>(null);
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
+  const [typedAnswer, setTypedAnswer] = useState<string>("");
   const [predictedWinnerId, setPredictedWinnerId] = useState<string | null>(null);
   const [hasLockedSubmission, setHasLockedSubmission] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -151,6 +157,10 @@ export const WhatsTheMajority: React.FC<WhatsTheMajorityProps> = ({
   >("setup");
   const [offlineCurrentTurnIndex, setOfflineCurrentTurnIndex] = useState<number>(0);
   const [offlineSubmissions, setOfflineSubmissions] = useState<Record<string, string>>({});
+  const [offlineMatchResults, setOfflineMatchResults] = useState<
+    Record<string, { isMatched: boolean; canonical: string; rank: number | null; points: number }>
+  >({});
+  const [offlineInputText, setOfflineInputText] = useState<string>("");
   const [offlineCurrentCrowdQ, setOfflineCurrentCrowdQ] = useState<CrowdQuestion | null>(null);
   const [offlineCurrentFriendQ, setOfflineCurrentFriendQ] = useState<FriendsQuestion | null>(null);
   const [offlineUsedQIds, setOfflineUsedQIds] = useState<Set<string>>(new Set());
@@ -161,7 +171,6 @@ export const WhatsTheMajority: React.FC<WhatsTheMajorityProps> = ({
   useEffect(() => {
     if (!isMultiplayer || !roomId) return;
 
-    // Join game channel
     socket.emit("joinGame", { roomId, userId: currentUserId });
 
     const handleGameStateUpdate = (newState: MultiplayerState) => {
@@ -169,6 +178,7 @@ export const WhatsTheMajority: React.FC<WhatsTheMajorityProps> = ({
       // Reset local submission state on new round
       if (newState.gamePhase === "round_intro") {
         setSelectedOptionId(null);
+        setTypedAnswer("");
         setPredictedWinnerId(null);
         setHasLockedSubmission(false);
         setFeedbackError(null);
@@ -183,8 +193,9 @@ export const WhatsTheMajority: React.FC<WhatsTheMajorityProps> = ({
       { roomId, action: "getPrivateData", payload: {} },
       (res: any) => {
         if (res && res.ok && res.hasSubmitted) {
-          setSelectedOptionId(res.selectedOptionId);
-          setPredictedWinnerId(res.predictedWinnerId);
+          if (res.textAnswer) setTypedAnswer(res.textAnswer);
+          if (res.selectedOptionId) setSelectedOptionId(res.selectedOptionId);
+          if (res.predictedWinnerId) setPredictedWinnerId(res.predictedWinnerId);
           setHasLockedSubmission(true);
         }
       }
@@ -195,16 +206,31 @@ export const WhatsTheMajority: React.FC<WhatsTheMajorityProps> = ({
     };
   }, [isMultiplayer, roomId, currentUserId]);
 
-  // Handle Online Action Submit
+  // Handle Online Action Submit (Both OPEN_ENDED and FIXED_OPTIONS)
   const handleLockInOnline = () => {
-    if (!selectedOptionId || hasLockedSubmission || submitting || !roomId) return;
-    setSubmitting(true);
-    setFeedbackError(null);
+    if (hasLockedSubmission || submitting || !roomId) return;
 
     const isFriends = gameState?.mode === "friends";
-    const payload = isFriends
-      ? { targetUserId: selectedOptionId, predictedWinnerId }
-      : { optionId: selectedOptionId, predictedWinnerId };
+    const isOpenEnded = gameState?.currentQuestion?.answerFormat === "OPEN_ENDED";
+
+    let payload: any = { predictedWinnerId };
+
+    if (isFriends) {
+      if (!selectedOptionId) return;
+      payload.targetUserId = selectedOptionId;
+    } else if (isOpenEnded) {
+      if (!typedAnswer.trim()) {
+        setFeedbackError("Please type your answer!");
+        return;
+      }
+      payload.textAnswer = typedAnswer.trim();
+    } else {
+      if (!selectedOptionId) return;
+      payload.optionId = selectedOptionId;
+    }
+
+    setSubmitting(true);
+    setFeedbackError(null);
 
     socket.emit(
       "gameAction",
@@ -249,6 +275,8 @@ export const WhatsTheMajority: React.FC<WhatsTheMajorityProps> = ({
   const startOfflineRound = (roundNum: number) => {
     setOfflineRound(roundNum);
     setOfflineSubmissions({});
+    setOfflineMatchResults({});
+    setOfflineInputText("");
     setOfflineCurrentTurnIndex(0);
 
     if (offlineMode === "friends") {
@@ -268,16 +296,16 @@ export const WhatsTheMajority: React.FC<WhatsTheMajorityProps> = ({
     setOfflineStep("pass_device");
   };
 
-  const handleOfflinePlayerPick = (choiceId: string) => {
+  const handleOfflinePlayerPick = (choiceOrText: string) => {
     const currentPlayer = offlinePlayers[offlineCurrentTurnIndex];
-    const newSubmissions = { ...offlineSubmissions, [currentPlayer]: choiceId };
+    const newSubmissions = { ...offlineSubmissions, [currentPlayer]: choiceOrText };
     setOfflineSubmissions(newSubmissions);
+    setOfflineInputText("");
 
     if (offlineCurrentTurnIndex + 1 < offlinePlayers.length) {
       setOfflineCurrentTurnIndex(prev => prev + 1);
       setOfflineStep("pass_device");
     } else {
-      // All players answered! Reveal results
       calculateOfflineScores(newSubmissions);
       setOfflineStep("reveal");
     }
@@ -285,16 +313,45 @@ export const WhatsTheMajority: React.FC<WhatsTheMajorityProps> = ({
 
   const calculateOfflineScores = (submissions: Record<string, string>) => {
     const updatedScores = { ...offlineScores };
+    const matchResMap: Record<string, any> = {};
 
     if (offlineMode === "classic_crowd" && offlineCurrentCrowdQ) {
-      Object.entries(submissions).forEach(([player, optId]) => {
-        const opt = offlineCurrentCrowdQ.options.find(o => o.id === optId);
-        if (opt) {
-          updatedScores[player] = (updatedScores[player] || 0) + opt.points;
+      const isOpenEnded = offlineCurrentCrowdQ.answerFormat === "OPEN_ENDED";
+
+      Object.entries(submissions).forEach(([player, val]) => {
+        if (isOpenEnded) {
+          const matchedOpt = clientMatchAnswer(val, offlineCurrentCrowdQ.options);
+          if (matchedOpt) {
+            updatedScores[player] = (updatedScores[player] || 0) + matchedOpt.points;
+            matchResMap[player] = {
+              isMatched: true,
+              canonical: matchedOpt.text,
+              rank: matchedOpt.rank,
+              points: matchedOpt.points
+            };
+          } else {
+            matchResMap[player] = {
+              isMatched: false,
+              canonical: "Unmatched",
+              rank: null,
+              points: 0
+            };
+          }
+        } else {
+          const opt = offlineCurrentCrowdQ.options.find(o => o.id === val);
+          if (opt) {
+            updatedScores[player] = (updatedScores[player] || 0) + opt.points;
+            matchResMap[player] = {
+              isMatched: true,
+              canonical: opt.text,
+              rank: opt.rank,
+              points: opt.points
+            };
+          }
         }
       });
+      setOfflineMatchResults(matchResMap);
     } else if (offlineMode === "friends") {
-      // Find majority voted player
       const voteTally: Record<string, number> = {};
       Object.values(submissions).forEach(votedTarget => {
         voteTally[votedTarget] = (voteTally[votedTarget] || 0) + 1;
@@ -568,6 +625,10 @@ export const WhatsTheMajority: React.FC<WhatsTheMajorityProps> = ({
     // 3. Player Action / Answer Input Screen
     if (offlineStep === "player_action") {
       const currentPlayer = offlinePlayers[offlineCurrentTurnIndex];
+      const isCrowdOpenEnded =
+        offlineMode === "classic_crowd" &&
+        offlineCurrentCrowdQ &&
+        offlineCurrentCrowdQ.answerFormat === "OPEN_ENDED";
 
       return (
         <div className="min-h-screen bg-gradient-to-br from-indigo-950 via-purple-900 to-slate-900 text-white p-4 sm:p-8 flex items-center justify-center">
@@ -592,29 +653,57 @@ export const WhatsTheMajority: React.FC<WhatsTheMajorityProps> = ({
                   </h3>
                 </div>
 
-                <p className="text-xs text-slate-400 mb-3">
-                  Guess which answer ranked highest (#1 = 40 pts, #2 = 30 pts, #3 = 20 pts, #4 = 10 pts):
-                </p>
-
-                <div className="space-y-2.5 mb-6">
-                  {offlineCurrentCrowdQ.options.map((opt, i) => (
+                {isCrowdOpenEnded ? (
+                  <div className="space-y-4 mb-6">
+                    <p className="text-xs text-slate-400">
+                      No choices provided! Type what you think the crowd voted #1:
+                    </p>
+                    <input
+                      type="text"
+                      maxLength={60}
+                      value={offlineInputText}
+                      onChange={e => setOfflineInputText(e.target.value)}
+                      placeholder="Type your answer here..."
+                      className="w-full bg-slate-800 border border-purple-500/40 rounded-xl px-4 py-3.5 text-white placeholder-slate-400 focus:outline-none focus:border-amber-400 font-semibold"
+                    />
                     <button
-                      key={opt.id}
-                      onClick={() => handleOfflinePlayerPick(opt.id)}
-                      className="w-full text-left p-3.5 rounded-xl bg-slate-800/80 hover:bg-purple-700/60 border border-purple-500/30 hover:border-amber-400 transition-all font-semibold text-sm flex items-center justify-between group"
+                      disabled={!offlineInputText.trim()}
+                      onClick={() => handleOfflinePlayerPick(offlineInputText.trim())}
+                      className={`w-full py-3.5 rounded-xl font-black text-white shadow-lg ${
+                        offlineInputText.trim()
+                          ? "bg-gradient-to-r from-amber-500 to-rose-600 hover:brightness-110 cursor-pointer"
+                          : "bg-slate-800 text-slate-500 cursor-not-allowed"
+                      }`}
                     >
-                      <div className="flex items-center space-x-3">
-                        <span className="w-7 h-7 rounded-lg bg-purple-600/50 flex items-center justify-center text-xs font-black text-amber-300">
-                          {String.fromCharCode(65 + i)}
-                        </span>
-                        <span className="text-slate-100 group-hover:text-white">
-                          {opt.text}
-                        </span>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-purple-400 group-hover:text-amber-300 group-hover:translate-x-1 transition-transform" />
+                      Lock In Answer & Pass 🔒
                     </button>
-                  ))}
-                </div>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-xs text-slate-400 mb-3">
+                      Select what you think was the #1 ranked crowd answer:
+                    </p>
+                    <div className="space-y-2.5 mb-6">
+                      {offlineCurrentCrowdQ.options.map((opt, i) => (
+                        <button
+                          key={opt.id}
+                          onClick={() => handleOfflinePlayerPick(opt.id)}
+                          className="w-full text-left p-3.5 rounded-xl bg-slate-800/80 hover:bg-purple-700/60 border border-purple-500/30 hover:border-amber-400 transition-all font-semibold text-sm flex items-center justify-between group"
+                        >
+                          <div className="flex items-center space-x-3">
+                            <span className="w-7 h-7 rounded-lg bg-purple-600/50 flex items-center justify-center text-xs font-black text-amber-300">
+                              {String.fromCharCode(65 + i)}
+                            </span>
+                            <span className="text-slate-100 group-hover:text-white">
+                              {opt.text}
+                            </span>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-purple-400 group-hover:text-amber-300 group-hover:translate-x-1 transition-transform" />
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
               </>
             )}
 
@@ -662,6 +751,11 @@ export const WhatsTheMajority: React.FC<WhatsTheMajorityProps> = ({
 
     // 4. Reveal Screen
     if (offlineStep === "reveal") {
+      const isCrowdOpen =
+        offlineMode === "classic_crowd" &&
+        offlineCurrentCrowdQ &&
+        offlineCurrentCrowdQ.answerFormat === "OPEN_ENDED";
+
       return (
         <div className="min-h-screen bg-gradient-to-br from-indigo-950 via-purple-900 to-slate-900 text-white p-4 sm:p-8 flex items-center justify-center">
           <div className="max-w-xl w-full bg-slate-900/90 border border-purple-500/30 rounded-2xl p-6 shadow-2xl backdrop-blur-md">
@@ -680,8 +774,8 @@ export const WhatsTheMajority: React.FC<WhatsTheMajorityProps> = ({
                   .slice()
                   .sort((a, b) => a.rank - b.rank)
                   .map(opt => {
-                    const voters = Object.entries(offlineSubmissions)
-                      .filter(([_, choice]) => choice === opt.id)
+                    const matchedPlayers = Object.entries(offlineMatchResults)
+                      .filter(([_, m]) => m.isMatched && m.rank === opt.rank)
                       .map(([p]) => p);
 
                     return (
@@ -711,11 +805,13 @@ export const WhatsTheMajority: React.FC<WhatsTheMajorityProps> = ({
                           </span>
                         </div>
                         <div className="flex items-center justify-between text-xs text-slate-400 mt-2">
-                          <span>{opt.percentage}% of respondents</span>
+                          <span>{opt.percentage ? `${opt.percentage}% of crowd` : ""}</span>
                           <span>
-                            Voters:{" "}
-                            {voters.length > 0 ? (
-                              <strong className="text-purple-300">{voters.join(", ")}</strong>
+                            Matched:{" "}
+                            {matchedPlayers.length > 0 ? (
+                              <strong className="text-purple-300">
+                                {matchedPlayers.join(", ")}
+                              </strong>
                             ) : (
                               "None"
                             )}
@@ -724,6 +820,34 @@ export const WhatsTheMajority: React.FC<WhatsTheMajorityProps> = ({
                       </div>
                     );
                   })}
+              </div>
+            )}
+
+            {/* Offline Player Breakdown */}
+            {isCrowdOpen && (
+              <div className="mb-6 p-4 rounded-xl bg-slate-800/70 border border-slate-700">
+                <h4 className="text-xs font-bold text-purple-300 uppercase tracking-wider mb-2">
+                  Player Answers:
+                </h4>
+                <div className="space-y-1.5 text-xs">
+                  {Object.entries(offlineSubmissions).map(([p, text]) => {
+                    const m = offlineMatchResults[p];
+                    return (
+                      <div key={p} className="flex items-center justify-between">
+                        <span className="text-slate-300 font-semibold">
+                          {p}: <span className="text-amber-200 font-normal">"{text}"</span>
+                        </span>
+                        {m?.isMatched ? (
+                          <span className="text-emerald-400 font-bold">
+                            ➔ Rank #{m.rank} (+{m.points} pts)
+                          </span>
+                        ) : (
+                          <span className="text-rose-400 font-medium">➔ Unmatched (0 pts)</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
@@ -897,6 +1021,13 @@ export const WhatsTheMajority: React.FC<WhatsTheMajorityProps> = ({
 
   const isHost = players.find(p => p.userId === currentUserId)?.id === players[0]?.id;
   const isFriendsMode = mode === "friends";
+  const isOpenEnded = currentQuestion?.answerFormat === "OPEN_ENDED";
+
+  const canSubmit = isFriendsMode
+    ? Boolean(selectedOptionId)
+    : isOpenEnded
+    ? Boolean(typedAnswer.trim())
+    : Boolean(selectedOptionId);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-950 via-purple-900 to-slate-900 text-white p-4 sm:p-6 flex flex-col">
@@ -960,6 +1091,8 @@ export const WhatsTheMajority: React.FC<WhatsTheMajorityProps> = ({
             <p className="text-slate-300 text-sm max-w-md mx-auto">
               {isFriendsMode
                 ? "Answer prompts about your friends in this room!"
+                : isOpenEnded
+                ? "Open-ended round: Type what you think 1,000 surveyed Indians ranked #1!"
                 : "Predict what 1,000 surveyed Indians ranked as their top choice!"}
             </p>
           </div>
@@ -997,7 +1130,7 @@ export const WhatsTheMajority: React.FC<WhatsTheMajorityProps> = ({
               )}
             </div>
 
-            {/* Selection Options */}
+            {/* Selection / Input Area */}
             <div className="space-y-3 mb-6">
               {isFriendsMode ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -1023,9 +1156,38 @@ export const WhatsTheMajority: React.FC<WhatsTheMajorityProps> = ({
                     );
                   })}
                 </div>
+              ) : isOpenEnded ? (
+                /* OPEN_ENDED TEXT INPUT */
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-xs text-purple-300">
+                    <span className="flex items-center space-x-1.5 font-semibold">
+                      <Edit3 className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Type your prediction:</span>
+                    </span>
+                    <span>{typedAnswer.length} / 60</span>
+                  </div>
+                  <input
+                    type="text"
+                    disabled={hasLockedSubmission}
+                    maxLength={60}
+                    value={typedAnswer}
+                    onChange={e => setTypedAnswer(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter" && !hasLockedSubmission && typedAnswer.trim()) {
+                        handleLockInOnline();
+                      }
+                    }}
+                    placeholder="Type your answer (e.g. Lying, Overslept, Maggi)..."
+                    className="w-full bg-slate-800/90 border border-purple-500/40 rounded-xl px-4 py-3.5 text-white placeholder-slate-400 focus:outline-none focus:border-amber-400 text-base font-semibold shadow-inner"
+                  />
+                  <p className="text-[11px] text-slate-400 italic">
+                    💡 No options shown! Use keywords or phrases. The server recognizes common aliases and answers!
+                  </p>
+                </div>
               ) : (
+                /* FIXED_OPTIONS GRID */
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {currentQuestion.options.map((opt: any, idx: number) => {
+                  {currentQuestion.options?.map((opt: any, idx: number) => {
                     const isSelected = selectedOptionId === opt.id;
                     return (
                       <button
@@ -1062,12 +1224,12 @@ export const WhatsTheMajority: React.FC<WhatsTheMajorityProps> = ({
 
             {/* Lock In Button */}
             <button
-              disabled={!selectedOptionId || hasLockedSubmission || submitting}
+              disabled={!canSubmit || hasLockedSubmission || submitting}
               onClick={handleLockInOnline}
               className={`w-full py-4 rounded-xl font-black text-base sm:text-lg shadow-xl transition-all duration-200 flex items-center justify-center space-x-2 ${
                 hasLockedSubmission
                   ? "bg-emerald-600 text-white shadow-emerald-500/20"
-                  : selectedOptionId
+                  : canSubmit
                   ? "bg-gradient-to-r from-amber-500 to-rose-600 text-white hover:brightness-110 cursor-pointer"
                   : "bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed"
               }`}
@@ -1125,7 +1287,7 @@ export const WhatsTheMajority: React.FC<WhatsTheMajorityProps> = ({
                 Majority Revealed!
               </span>
               <h2 className="text-2xl sm:text-3xl font-black text-white mt-1">
-                {revealData.mode === "friends" ? "Group Consensus" : "Survey Rankings"}
+                {revealData.mode === "friends" ? "Group Consensus" : "Top 4 Majority Answers"}
               </h2>
             </div>
 
@@ -1162,7 +1324,7 @@ export const WhatsTheMajority: React.FC<WhatsTheMajorityProps> = ({
                     <div className="flex items-center justify-between text-xs text-slate-400 mt-2">
                       <span>{opt.percentage ? `${opt.percentage}% surveyed` : ""}</span>
                       <span>
-                        Voters:{" "}
+                        Matched Voters:{" "}
                         {opt.voterNames && opt.voterNames.length > 0 ? (
                           <strong className="text-purple-300">{opt.voterNames.join(", ")}</strong>
                         ) : (
@@ -1211,21 +1373,33 @@ export const WhatsTheMajority: React.FC<WhatsTheMajorityProps> = ({
               </div>
             )}
 
-            {/* Round Points Summary */}
+            {/* Detailed Player Submissions & Points Breakdown */}
             <div className="border-t border-slate-800 pt-4 mb-6">
               <h4 className="text-xs font-bold text-purple-300 uppercase tracking-wider mb-2">
-                Points Gained This Round:
+                Player Results:
               </h4>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <div className="space-y-2">
                 {revealData.playerBreakdowns.map(pb => (
                   <div
                     key={pb.userId}
-                    className="p-2.5 rounded-lg bg-slate-800/60 border border-slate-750 text-xs flex items-center justify-between"
+                    className="p-3 rounded-lg bg-slate-800/60 border border-slate-750 flex items-center justify-between"
                   >
-                    <span className="font-semibold text-slate-300 truncate max-w-[100px]">
-                      {pb.name}
-                    </span>
-                    <span className="font-black text-amber-400">
+                    <div>
+                      <div className="font-semibold text-sm text-white">{pb.name}</div>
+                      {pb.submittedText && (
+                        <div className="text-xs text-slate-300">
+                          Submitted: <span className="text-amber-200">"{pb.submittedText}"</span>
+                          {pb.isMatched ? (
+                            <span className="text-emerald-300 ml-2 font-bold">
+                              ➔ Matched #{pb.rank} ({pb.canonicalAnswer})
+                            </span>
+                          ) : (
+                            <span className="text-rose-400 ml-2 font-medium">➔ Unmatched</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <span className="font-black text-base text-amber-400">
                       +{pb.totalRoundPoints} pts
                     </span>
                   </div>

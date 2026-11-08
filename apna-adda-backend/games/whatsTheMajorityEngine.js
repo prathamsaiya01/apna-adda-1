@@ -7,6 +7,16 @@ const {
 } = require("./whatsTheMajorityQuestions");
 
 const {
+  getAllBatchedQuestions,
+  getBatch
+} = require("./whatsTheMajorityBank");
+
+const {
+  matchAnswer,
+  normalizeText
+} = require("../services/answerMatcher");
+
+const {
   secureChoice,
   secureSample,
   secureFisherYatesShuffle,
@@ -34,6 +44,7 @@ class WhatsTheMajorityEngine {
     this.allowSelfVote = Boolean(s.allowSelfVote); // default false
     this.chaosEnabled = this.mode === "chaos_round" || Boolean(s.chaosEnabled);
     this.category = s.category || "All Categories";
+    this.preferredBatchId = s.batchId ? Number(s.batchId) : null;
 
     // Setup teams if team_battle mode
     this.teamAssignments = new Map(); // userId -> 'chai' | 'samosa'
@@ -52,7 +63,7 @@ class WhatsTheMajorityEngine {
       category: this.category,
       timer: this.baseTimerDuration,
       activeChaosRule: null, // null | 'double_points' | 'reverse_majority' | 'quick_vote' | 'hidden_leaderboard'
-      currentQuestion: null, // Public stripped question (options have id & text, ranks HIDDEN)
+      currentQuestion: null, // Stripped for client (no ranks, points or secret categories for OPEN_ENDED)
       players: this.room.players.map((p, idx) => ({
         id: p.userId || p._id || p.name || String(idx),
         userId: p.userId,
@@ -76,7 +87,7 @@ class WhatsTheMajorityEngine {
     // Private authoritative round data (NEVER broadcast directly before reveal)
     this.privateRoundData = {
       rawQuestion: null,
-      submissions: new Map() // userId -> { optionId, targetUserId, predictedWinnerId, timestamp }
+      submissions: new Map() // userId -> { textAnswer, optionId, targetUserId, predictedWinnerId, timestamp }
     };
   }
 
@@ -120,7 +131,6 @@ class WhatsTheMajorityEngine {
     let roundDuration = this.baseTimerDuration;
 
     if (this.chaosEnabled) {
-      // Trigger chaos on final round or every 3rd round
       const isFinalRound = this.state.roundNumber === this.totalRounds;
       const isEvery3 = this.state.roundNumber % 3 === 0;
       if (this.mode === "chaos_round" || isFinalRound || isEvery3) {
@@ -143,28 +153,44 @@ class WhatsTheMajorityEngine {
         prompt: q.prompt,
         followUp: q.followUp || "",
         mode: "friends",
+        answerFormat: "FRIENDS_VOTE",
         options: this.room.players.map(p => ({
           id: p.userId,
           text: p.name,
-          isSelf: false // Updated per-client in getPublicState
+          isSelf: false
         }))
       };
     } else {
       const q = this.pickCrowdQuestion();
       this.privateRoundData.rawQuestion = q;
-      // Strip ranks and points for anti-cheat
-      const shuffledOptions = secureFisherYatesShuffle(q.options).map(opt => ({
-        id: opt.id,
-        text: opt.text
-      }));
-      this.state.currentQuestion = {
-        id: q.id,
-        category: q.category,
-        question: q.question,
-        audience: q.audience,
-        mode: "classic_crowd",
-        options: shuffledOptions
-      };
+
+      if (q.answerFormat === "OPEN_ENDED") {
+        // Anti-cheat: Send ONLY the question, category, and audience. Do NOT send answers or keywords!
+        this.state.currentQuestion = {
+          id: q.id,
+          category: q.category,
+          question: q.question,
+          audience: q.audienceProfile || q.audience || "1,000 surveyed Indians",
+          answerFormat: "OPEN_ENDED",
+          mode: "classic_crowd"
+        };
+      } else {
+        // FIXED_OPTIONS: Send shuffled option labels without ranks or points
+        const optionsList = q.answers || q.options;
+        const shuffled = secureFisherYatesShuffle(optionsList).map(opt => ({
+          id: opt.id,
+          text: opt.canonicalAnswer || opt.text
+        }));
+        this.state.currentQuestion = {
+          id: q.id,
+          category: q.category,
+          question: q.question,
+          audience: q.audienceProfile || q.audience || "1,000 surveyed Indians",
+          answerFormat: "FIXED_OPTIONS",
+          mode: "classic_crowd",
+          options: shuffled
+        };
+      }
     }
 
     // Round intro phase
@@ -176,7 +202,10 @@ class WhatsTheMajorityEngine {
     this.transitionTimeout = setTimeout(() => {
       this.state.gamePhase = "voting";
       this.state.timer = roundDuration;
-      this.state.statusMessage = this.isPredictWinnerActive()
+      const isOpenEnded = this.state.currentQuestion?.answerFormat === "OPEN_ENDED";
+      this.state.statusMessage = isOpenEnded
+        ? "Type your best guess for the crowd's top answer!"
+        : this.isPredictWinnerActive()
         ? "Submit your choice & predict the crowd favourite!"
         : "Lock in your vote!";
       this.broadcastState();
@@ -189,11 +218,36 @@ class WhatsTheMajorityEngine {
   }
 
   pickCrowdQuestion() {
-    let pool = CLASSIC_CROWD_QUESTIONS;
-    if (this.category && this.category !== "All Categories") {
-      const filtered = pool.filter(q => q.category.toLowerCase().includes(this.category.toLowerCase()));
-      if (filtered.length > 0) pool = filtered;
+    // Collect from batched questions first, fallback to classic questions
+    let batched = getAllBatchedQuestions();
+    let legacy = CLASSIC_CROWD_QUESTIONS.map(q => ({
+      id: q.id,
+      question: q.question,
+      category: q.category,
+      audienceProfile: q.audience,
+      answerFormat: "FIXED_OPTIONS",
+      answers: q.options.map(o => ({
+        id: o.id,
+        rank: o.rank,
+        canonicalAnswer: o.text,
+        points: o.points,
+        keywords: [o.text.toLowerCase(), ...(o.aliases || [])],
+        acceptedPhrases: o.aliases || []
+      }))
+    }));
+
+    let pool = [...batched, ...legacy];
+
+    if (this.preferredBatchId) {
+      const batchFiltered = pool.filter(q => q.batchId === this.preferredBatchId);
+      if (batchFiltered.length > 0) pool = batchFiltered;
     }
+
+    if (this.category && this.category !== "All Categories") {
+      const catFiltered = pool.filter(q => q.category.toLowerCase().includes(this.category.toLowerCase()));
+      if (catFiltered.length > 0) pool = catFiltered;
+    }
+
     const unused = pool.filter(q => !this.usedCrowdQuestionIds.has(q.id));
     const selectedPool = unused.length > 0 ? unused : pool;
     const picked = secureChoice(selectedPool);
@@ -267,23 +321,41 @@ class WhatsTheMajorityEngine {
       return;
     }
 
-    const { optionId, targetUserId, predictedWinnerId } = payload || {};
-    const chosenId = optionId || targetUserId;
+    const { optionId, targetUserId, textAnswer, answer, predictedWinnerId } = payload || {};
+    const text = (textAnswer || answer || "").trim();
+    const chosenOptionId = optionId || null;
+    const chosenTargetId = targetUserId || null;
 
-    if (!chosenId) {
-      if (callback) callback({ ok: false, error: "Missing selection choice." });
-      return;
+    const rawQ = this.privateRoundData.rawQuestion;
+    const isOpenEnded = rawQ && rawQ.answerFormat === "OPEN_ENDED";
+
+    // Validate submission based on format
+    if (this.mode === "friends") {
+      if (!chosenTargetId) {
+        if (callback) callback({ ok: false, error: "Please select a friend." });
+        return;
+      }
+      if (!this.allowSelfVote && chosenTargetId === userId) {
+        if (callback) callback({ ok: false, error: "Self-voting is disabled in this room." });
+        return;
+      }
+    } else if (isOpenEnded) {
+      if (!text) {
+        if (callback) callback({ ok: false, error: "Please type an answer." });
+        return;
+      }
+    } else {
+      if (!chosenOptionId && !chosenTargetId) {
+        if (callback) callback({ ok: false, error: "Please select an option." });
+        return;
+      }
     }
 
-    // If Friends mode and self voting disabled
-    if (this.mode === "friends" && !this.allowSelfVote && chosenId === userId) {
-      if (callback) callback({ ok: false, error: "Self-voting is disabled in this room." });
-      return;
-    }
-
-    // Save submission
+    // Save submission privately on server
     this.privateRoundData.submissions.set(userId, {
-      optionId: chosenId,
+      textAnswer: text,
+      optionId: chosenOptionId,
+      targetUserId: chosenTargetId,
       predictedWinnerId: predictedWinnerId || null,
       timestamp: Date.now()
     });
@@ -304,7 +376,6 @@ class WhatsTheMajorityEngine {
 
     if (allSubmitted && connectedPlayers.length > 0) {
       this.clearAllTimers();
-      // Brief buffer before reveal
       this.transitionTimeout = setTimeout(() => {
         this.lockAndReveal();
       }, 700);
@@ -317,7 +388,9 @@ class WhatsTheMajorityEngine {
       callback({
         ok: true,
         hasSubmitted: Boolean(sub),
+        textAnswer: sub ? sub.textAnswer : null,
         selectedOptionId: sub ? sub.optionId : null,
+        targetUserId: sub ? sub.targetUserId : null,
         predictedWinnerId: sub ? sub.predictedWinnerId : null,
         myTeam: this.teamAssignments.get(userId) || null
       });
@@ -357,7 +430,7 @@ class WhatsTheMajorityEngine {
     this.state.statusMessage = "All answers locked in! Revealing majority...";
 
     const rawQ = this.privateRoundData.rawQuestion;
-    const isFriends = this.mode === "friends" || (rawQ && !rawQ.options);
+    const isFriends = this.mode === "friends" || (rawQ && !rawQ.answers && !rawQ.options);
     const chaos = this.state.activeChaosRule;
     const isReverse = chaos === "reverse_majority";
     const isDoublePoints = chaos === "double_points";
@@ -370,16 +443,16 @@ class WhatsTheMajorityEngine {
       // ------------------------------------
       // FRIENDS MODE SCORING
       // ------------------------------------
-      const voteCounts = new Map(); // targetUserId -> count
+      const voteCounts = new Map();
       this.room.players.forEach(p => voteCounts.set(p.userId, 0));
 
       submissions.forEach(sub => {
-        if (voteCounts.has(sub.optionId)) {
-          voteCounts.set(sub.optionId, voteCounts.get(sub.optionId) + 1);
+        const target = sub.targetUserId || sub.optionId;
+        if (target && voteCounts.has(target)) {
+          voteCounts.set(target, voteCounts.get(target) + 1);
         }
       });
 
-      // Find highest vote count
       let maxVotes = 0;
       voteCounts.forEach(count => {
         if (count > maxVotes) maxVotes = count;
@@ -396,7 +469,7 @@ class WhatsTheMajorityEngine {
         const sub = submissions.get(p.userId);
         let points = 0;
         let predictionBonus = 0;
-        const votedForId = sub ? sub.optionId : null;
+        const votedForId = sub ? (sub.targetUserId || sub.optionId) : null;
         const targetPlayer = this.state.players.find(tp => tp.userId === votedForId);
         const votedForName = targetPlayer ? targetPlayer.name : "No Vote";
         const isMajority = Boolean(votedForId && majorityUserIds.includes(votedForId));
@@ -405,7 +478,6 @@ class WhatsTheMajorityEngine {
           points = 40 * roundMultiplier;
         }
 
-        // Prediction bonus (+50 points)
         if (sub && sub.predictedWinnerId && majorityUserIds.includes(sub.predictedWinnerId)) {
           predictionBonus = 50 * roundMultiplier;
         }
@@ -447,68 +519,85 @@ class WhatsTheMajorityEngine {
       };
     } else {
       // ------------------------------------
-      // CLASSIC CROWD SCORING
+      // CLASSIC CROWD SCORING (OPEN_ENDED & FIXED_OPTIONS)
       // ------------------------------------
-      const rawQ = this.privateRoundData.rawQuestion;
-      const optionMap = new Map();
-      rawQ.options.forEach(opt => {
-        // Adjust points for reverse majority chaos rule
-        let effectiveRank = opt.rank;
-        let effectivePoints = opt.points;
+      const answersList = rawQ.answers || rawQ.options.map(o => ({
+        id: o.id,
+        rank: o.rank,
+        canonicalAnswer: o.text || o.canonicalAnswer,
+        points: o.points,
+        keywords: [o.text?.toLowerCase() || "", ...(o.aliases || [])],
+        acceptedPhrases: o.aliases || []
+      }));
+
+      const isOpenEnded = rawQ.answerFormat === "OPEN_ENDED";
+
+      // Build answer category map
+      const categoryMap = new Map();
+      answersList.forEach(ans => {
+        let effectiveRank = ans.rank;
+        let effectivePoints = ans.points || (ans.rank === 1 ? 40 : ans.rank === 2 ? 30 : ans.rank === 3 ? 20 : 10);
         if (isReverse) {
-          effectiveRank = 5 - opt.rank;
+          effectiveRank = 5 - ans.rank;
           effectivePoints = effectiveRank === 1 ? 40 : effectiveRank === 2 ? 30 : effectiveRank === 3 ? 20 : 10;
         }
-        optionMap.set(opt.id, {
-          ...opt,
-          effectiveRank,
-          effectivePoints: effectivePoints * roundMultiplier,
-          voterUserIds: []
+        categoryMap.set(ans.id, {
+          id: ans.id,
+          rank: effectiveRank,
+          canonicalAnswer: ans.canonicalAnswer,
+          points: effectivePoints * roundMultiplier,
+          voters: []
         });
-      });
-
-      // Track room player vote distribution across options
-      const roomOptionVotes = new Map();
-      rawQ.options.forEach(opt => roomOptionVotes.set(opt.id, 0));
-
-      submissions.forEach((sub, uid) => {
-        if (optionMap.has(sub.optionId)) {
-          optionMap.get(sub.optionId).voterUserIds.push(uid);
-          roomOptionVotes.set(sub.optionId, (roomOptionVotes.get(sub.optionId) || 0) + 1);
-        }
-      });
-
-      // Find the room's most picked option for prediction scoring
-      let roomTopOptionId = null;
-      let roomTopVotes = 0;
-      roomOptionVotes.forEach((votes, optId) => {
-        if (votes > roomTopVotes) {
-          roomTopVotes = votes;
-          roomTopOptionId = optId;
-        }
       });
 
       this.state.players.forEach(p => {
         const sub = submissions.get(p.userId);
         let points = 0;
         let predictionBonus = 0;
-        let chosenOptionText = "No Submission";
-        let rank = null;
+        let submittedText = "No Submission";
+        let canonicalAnswer = "Unmatched";
+        let isMatched = false;
+        let matchedRank = null;
+        let matchedAnswerId = null;
 
-        if (sub && optionMap.has(sub.optionId)) {
-          const opt = optionMap.get(sub.optionId);
-          chosenOptionText = opt.text;
-          rank = opt.effectiveRank;
-          points = opt.effectivePoints;
-        }
+        if (sub) {
+          if (isOpenEnded) {
+            // OPEN_ENDED matching using centralized answerMatcher
+            submittedText = sub.textAnswer || "";
+            const matchRes = matchAnswer(submittedText, answersList);
+            if (matchRes.matched) {
+              isMatched = true;
+              matchedAnswerId = matchRes.answerId;
+              const cat = categoryMap.get(matchedAnswerId);
+              if (cat) {
+                canonicalAnswer = cat.canonicalAnswer;
+                matchedRank = cat.rank;
+                points = cat.points;
+                cat.voters.push(p.name);
+              }
+            } else {
+              canonicalAnswer = `Unmatched (${matchRes.reason || "No Match"})`;
+            }
+          } else {
+            // FIXED_OPTIONS matching by ID
+            const cat = categoryMap.get(sub.optionId);
+            if (cat) {
+              isMatched = true;
+              matchedAnswerId = cat.id;
+              submittedText = cat.canonicalAnswer;
+              canonicalAnswer = cat.canonicalAnswer;
+              matchedRank = cat.rank;
+              points = cat.points;
+              cat.voters.push(p.name);
+            }
+          }
 
-        // Prediction bonus (+50 points)
-        if (sub && sub.predictedWinnerId) {
-          const isWinnerMatch = isReverse
-            ? sub.predictedWinnerId === rawQ.options.find(o => o.rank === 4)?.id
-            : sub.predictedWinnerId === rawQ.options.find(o => o.rank === 1)?.id;
-          if (isWinnerMatch) {
-            predictionBonus = 50 * roundMultiplier;
+          // Prediction bonus (+50 points)
+          if (sub.predictedWinnerId) {
+            const topAns = answersList.find(a => isReverse ? a.rank === 4 : a.rank === 1);
+            if (topAns && sub.predictedWinnerId === topAns.id) {
+              predictionBonus = 50 * roundMultiplier;
+            }
           }
         }
 
@@ -516,7 +605,6 @@ class WhatsTheMajorityEngine {
         p.roundScore = totalRoundPoints;
         p.score += totalRoundPoints;
 
-        // If team battle, accumulate team scores
         if (this.mode === "team_battle" && p.team && this.state.teams[p.team]) {
           this.state.teams[p.team].score += totalRoundPoints;
         }
@@ -524,8 +612,10 @@ class WhatsTheMajorityEngine {
         playerBreakdowns.push({
           userId: p.userId,
           name: p.name,
-          chosenOptionText,
-          rank,
+          submittedText,
+          canonicalAnswer,
+          isMatched,
+          rank: matchedRank,
           pointsAwarded: points,
           predictionBonus,
           totalRoundPoints
@@ -534,18 +624,15 @@ class WhatsTheMajorityEngine {
 
       this.state.revealData = {
         mode: "classic_crowd",
-        rankedOptions: Array.from(optionMap.values())
-          .sort((a, b) => a.effectiveRank - b.effectiveRank)
-          .map(opt => ({
-            id: opt.id,
-            text: opt.text,
-            rank: opt.effectiveRank,
-            points: opt.effectivePoints,
-            percentage: opt.percentage,
-            voterNames: opt.voterUserIds.map(uid => {
-              const pl = this.state.players.find(p => p.userId === uid);
-              return pl ? pl.name : uid;
-            })
+        answerFormat: rawQ.answerFormat,
+        rankedOptions: Array.from(categoryMap.values())
+          .sort((a, b) => a.rank - b.rank)
+          .map(cat => ({
+            id: cat.id,
+            text: cat.canonicalAnswer,
+            rank: cat.rank,
+            points: cat.points,
+            voterNames: cat.voters
           })),
         playerBreakdowns,
         chaos
@@ -554,7 +641,6 @@ class WhatsTheMajorityEngine {
 
     this.broadcastState();
 
-    // Transition from reveal to round_results after 6 seconds
     this.transitionTimeout = setTimeout(() => {
       this.state.gamePhase = "round_results";
       this.state.statusMessage = "Round scores finalized!";
@@ -611,7 +697,6 @@ class WhatsTheMajorityEngine {
   getPublicState() {
     return {
       ...this.state,
-      // Hide rankings if chaos rule hidden_leaderboard is active during results
       players: this.state.players.map(p => ({
         id: p.id,
         userId: p.userId,

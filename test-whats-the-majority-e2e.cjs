@@ -140,6 +140,32 @@ async function runTestSuite() {
     await new Promise((r) => setTimeout(r, 3100));
     assert(engine.state.gamePhase === "voting", "Phase transitioned to voting");
 
+    // Set to a verified FIXED_OPTIONS question for Test Suite 3
+    const fixedQ = {
+      id: "q_test_fixed",
+      question: "Which IPL team has the most passionate fanbase?",
+      category: "Cricket",
+      audienceProfile: "1,000 fans",
+      answerFormat: "FIXED_OPTIONS",
+      answers: [
+        { id: "opt_1", rank: 1, canonicalAnswer: "RCB", points: 40, keywords: ["rcb"] },
+        { id: "opt_2", rank: 2, canonicalAnswer: "CSK", points: 30, keywords: ["csk"] },
+        { id: "opt_3", rank: 3, canonicalAnswer: "MI", points: 20, keywords: ["mi"] },
+        { id: "opt_4", rank: 4, canonicalAnswer: "KKR", points: 10, keywords: ["kkr"] }
+      ]
+    };
+    engine.privateRoundData.rawQuestion = fixedQ;
+    engine.state.currentQuestion = {
+      id: fixedQ.id,
+      question: fixedQ.question,
+      category: fixedQ.category,
+      audience: fixedQ.audienceProfile,
+      answerFormat: "FIXED_OPTIONS",
+      mode: "classic_crowd",
+      options: fixedQ.answers.map(a => ({ id: a.id, text: a.canonicalAnswer }))
+    };
+    engine.broadcastState();
+
     const publicQ = engine.state.currentQuestion;
     assert(publicQ.options.length === 4, "Question has 4 public options");
     assert(publicQ.options[0].rank === undefined, "Anti-cheat: Ranks are hidden from public state");
@@ -147,9 +173,10 @@ async function runTestSuite() {
 
     // Find option with rank 1, 2, 3 from server authoritative raw question
     const rawQ = engine.privateRoundData.rawQuestion;
-    const optRank1 = rawQ.options.find(o => o.rank === 1);
-    const optRank2 = rawQ.options.find(o => o.rank === 2);
-    const optRank3 = rawQ.options.find(o => o.rank === 3);
+    const answersList = rawQ.answers || rawQ.options;
+    const optRank1 = answersList.find(o => o.rank === 1);
+    const optRank2 = answersList.find(o => o.rank === 2);
+    const optRank3 = answersList.find(o => o.rank === 3);
 
     // Player 1 submits Rank 1 option
     await new Promise((resolve) => {
@@ -203,6 +230,77 @@ async function runTestSuite() {
     // p3 picked rank 3 (20) = 20
     assert(p3.roundScore === 20, `Player 3 score is 20 (rank 3): got ${p3.roundScore}`);
 
+    // 4.5. E2E: Open-Ended Question Matching & Privacy Check
+    console.log("\n[Test Suite 3.5] Open-Ended Question Flow & Anti-Cheat Privacy");
+    const { BATCH_1 } = require("./apna-adda-backend/games/whatsTheMajorityBank");
+    const openQ = BATCH_1.questions[0]; // Red flag question
+    engine.privateRoundData.rawQuestion = openQ;
+    engine.privateRoundData.submissions.clear();
+    engine.state.players.forEach(p => { p.hasVoted = false; p.roundScore = 0; });
+    engine.state.currentQuestion = {
+      id: openQ.id,
+      question: openQ.question,
+      category: openQ.category,
+      audience: openQ.audienceProfile,
+      answerFormat: "OPEN_ENDED",
+      mode: "classic_crowd"
+    };
+    engine.state.gamePhase = "voting";
+    engine.broadcastState();
+
+    assert(engine.state.currentQuestion.options === undefined, "Anti-cheat: No options array sent in OPEN_ENDED");
+    assert(engine.state.currentQuestion.answers === undefined, "Anti-cheat: No answers array sent in OPEN_ENDED");
+
+    // Player 1 types: "they keep lying" (matches Rank 1: Lying)
+    await new Promise((resolve) => {
+      c1.socket.emit("gameAction", {
+        roomId: room._id,
+        action: "submitAnswer",
+        payload: { textAnswer: "they keep lying" }
+      }, (res) => {
+        assert(res.ok === true, "Player 1 submits open-ended text answer");
+        resolve();
+      });
+    });
+
+    // Player 2 types: "talking behind my back" (matches Rank 2: Backstabbing)
+    await new Promise((resolve) => {
+      c2.socket.emit("gameAction", {
+        roomId: room._id,
+        action: "submitAnswer",
+        payload: { textAnswer: "talking behind my back" }
+      }, (res) => {
+        assert(res.ok === true, "Player 2 submits open-ended text answer");
+        resolve();
+      });
+    });
+
+    // Player 3 types unmatched text: "random nonsense text"
+    await new Promise((resolve) => {
+      c3.socket.emit("gameAction", {
+        roomId: room._id,
+        action: "submitAnswer",
+        payload: { textAnswer: "random nonsense text" }
+      }, (res) => {
+        assert(res.ok === true, "Player 3 submits open-ended text answer");
+        resolve();
+      });
+    });
+
+    await new Promise((r) => setTimeout(r, 1200));
+    assert(engine.state.gamePhase === "reveal", "Auto-transitioned to reveal for open-ended");
+
+    const p1Open = engine.state.revealData.playerBreakdowns.find(p => p.userId === "user_p1");
+    const p2Open = engine.state.revealData.playerBreakdowns.find(p => p.userId === "user_p2");
+    const p3Open = engine.state.revealData.playerBreakdowns.find(p => p.userId === "user_p3");
+
+    assert(p1Open.isMatched === true && p1Open.rank === 1, "Player 1 matched Rank 1 (Lying)");
+    assert(p1Open.pointsAwarded === 40, "Player 1 awarded 40 points for Rank 1");
+    assert(p2Open.isMatched === true && p2Open.rank === 2, "Player 2 matched Rank 2 (Backstabbing)");
+    assert(p2Open.pointsAwarded === 30, "Player 2 awarded 30 points for Rank 2");
+    assert(p3Open.isMatched === false, "Player 3 marked as unmatched");
+    assert(p3Open.pointsAwarded === 0, "Player 3 awarded 0 points for unmatched text");
+
     // 5. TEST SUITE 4: Friends Mode & Majority Voting
     console.log("\n[Test Suite 4] Friends Mode & Majority Voting");
     engine.mode = "friends";
@@ -250,7 +348,8 @@ async function runTestSuite() {
 
     engine.state.activeChaosRule = "reverse_majority";
     const chaosRawQ = engine.privateRoundData.rawQuestion;
-    const rank4Opt = chaosRawQ.options.find(o => o.rank === 4);
+    const chaosAnswers = chaosRawQ.answers || chaosRawQ.options;
+    const rank4Opt = chaosAnswers.find(o => o.rank === 4);
 
     // In reverse majority, rank 4 earns rank 1 points (40 pts)
     await new Promise((r) => c1.socket.emit("gameAction", { roomId: room._id, action: "submitAnswer", payload: { optionId: rank4Opt.id } }, r));

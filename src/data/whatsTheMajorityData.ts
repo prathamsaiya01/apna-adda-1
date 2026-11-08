@@ -5,7 +5,9 @@ export interface CrowdOption {
   text: string;
   rank: 1 | 2 | 3 | 4;
   points: number;
-  percentage: number;
+  percentage?: number;
+  keywords?: string[];
+  acceptedPhrases?: string[];
   aliases?: string[];
 }
 
@@ -14,6 +16,7 @@ export interface CrowdQuestion {
   category: string;
   question: string;
   audience: string;
+  answerFormat?: "FIXED_OPTIONS" | "OPEN_ENDED";
   options: CrowdOption[];
 }
 
@@ -39,111 +42,233 @@ export const CATEGORIES = [
 
 export const PASS_AND_PLAY_CROWD_QUESTIONS: CrowdQuestion[] = [
   {
+    id: "classic_friendship_001",
+    category: "Social Media & Dating",
+    question: "What is the biggest red flag in a friendship?",
+    audience: "1,000 Indian college students",
+    answerFormat: "OPEN_ENDED",
+    options: [
+      {
+        id: "ans_1",
+        text: "Lying",
+        rank: 1,
+        points: 40,
+        percentage: 48,
+        keywords: ["lying", "lie", "lies", "dishonest", "dishonesty", "being dishonest", "liar"],
+        acceptedPhrases: ["they keep lying", "always lying", "telling lies"]
+      },
+      {
+        id: "ans_2",
+        text: "Backstabbing",
+        rank: 2,
+        points: 30,
+        percentage: 26,
+        keywords: ["backstabbing", "backstab", "betrayal", "betray", "bitching"],
+        acceptedPhrases: ["talking behind my back", "backstab a friend"]
+      },
+      {
+        id: "ans_3",
+        text: "Sharing Secrets",
+        rank: 3,
+        points: 20,
+        percentage: 16,
+        keywords: ["sharing secrets", "exposing secrets", "leaking secrets", "gossiping"],
+        acceptedPhrases: ["telling others my secrets", "exposing personal information"]
+      },
+      {
+        id: "ans_4",
+        text: "Being Fake",
+        rank: 4,
+        points: 10,
+        percentage: 10,
+        keywords: ["fake", "fake friend", "two faced", "pretending"],
+        acceptedPhrases: ["acting fake", "pretending to be a friend"]
+      }
+    ]
+  },
+  {
+    id: "classic_college_002",
+    category: "College & Hostel Life",
+    question: "What is the #1 reason students give for bunking an 8:00 AM lecture?",
+    audience: "1,000 engineering and commerce students",
+    answerFormat: "OPEN_ENDED",
+    options: [
+      {
+        id: "ans_col_1",
+        text: "Overslept (Neend nahi khuli)",
+        rank: 1,
+        points: 40,
+        percentage: 52,
+        keywords: ["overslept", "oversleeping", "neend", "sleep", "so gaya", "woke up late"],
+        acceptedPhrases: ["neend nahi khuli", "so raha tha", "slept through alarm"]
+      },
+      {
+        id: "ans_col_2",
+        text: "Safe Attendance (Above 75%)",
+        rank: 2,
+        points: 30,
+        percentage: 24,
+        keywords: ["attendance", "75%", "safe attendance", "attendance full"],
+        acceptedPhrases: ["attendance safe hai", "above 75 percent"]
+      },
+      {
+        id: "ans_col_3",
+        text: "Hangout at Canteen / Chai Tapri",
+        rank: 3,
+        points: 20,
+        percentage: 14,
+        keywords: ["chai", "canteen", "tapri", "sutta", "hangout", "friends"],
+        acceptedPhrases: ["chai peena tha", "canteen mein baithe the"]
+      },
+      {
+        id: "ans_col_4",
+        text: "Boring Professor",
+        rank: 4,
+        points: 10,
+        percentage: 10,
+        keywords: ["boring", "boring professor", "professor", "teacher", "boring class"],
+        acceptedPhrases: ["professor is boring", "boring lecture"]
+      }
+    ]
+  },
+  {
+    id: "classic_street_007",
+    category: "Indian Street Food & Chai",
+    question: "Which Indian street food reigns supreme as #1 across the country?",
+    audience: "1,000 street food enthusiasts across India",
+    answerFormat: "OPEN_ENDED",
+    options: [
+      {
+        id: "ans_st_1",
+        text: "Pani Puri / Golgappa",
+        rank: 1,
+        points: 40,
+        percentage: 51,
+        keywords: ["pani puri", "golgappa", "puchka", "batashe", "gupchup"],
+        acceptedPhrases: ["teekha pani puri", "pani puri golgappa"]
+      },
+      {
+        id: "ans_st_2",
+        text: "Samosa",
+        rank: 2,
+        points: 30,
+        percentage: 25,
+        keywords: ["samosa", "samosas", "singhara"],
+        acceptedPhrases: ["garam samosa", "chai samosa"]
+      },
+      {
+        id: "ans_st_3",
+        text: "Vada Pav",
+        rank: 3,
+        points: 20,
+        percentage: 15,
+        keywords: ["vada pav", "wada pav", "batata vada"],
+        acceptedPhrases: ["mumbai vada pav", "garam vada pav"]
+      },
+      {
+        id: "ans_st_4",
+        text: "Pav Bhaji",
+        rank: 4,
+        points: 10,
+        percentage: 9,
+        keywords: ["pav bhaji", "paav bhaji", "bhaji pav"],
+        acceptedPhrases: ["amul butter pav bhaji", "hot pav bhaji"]
+      }
+    ]
+  },
+  {
+    id: "classic_ipl_004",
+    category: "Cricket & IPL",
+    question: "Which IPL team has the most loyal & passionate fanbase?",
+    audience: "1,000 active Indian cricket followers",
+    answerFormat: "FIXED_OPTIONS",
+    options: [
+      { id: "o1", text: "Royal Challengers Bengaluru (RCB)", rank: 1, points: 40, percentage: 48 },
+      { id: "o2", text: "Chennai Super Kings (CSK)", rank: 2, points: 30, percentage: 33 },
+      { id: "o3", text: "Mumbai Indians (MI)", rank: 3, points: 20, percentage: 13 },
+      { id: "o4", text: "Kolkata Knight Riders (KKR)", rank: 4, points: 10, percentage: 6 }
+    ]
+  },
+  {
     id: "c1",
     category: "Bollywood & Cinema",
-    question: "We surveyed 1,000 Indians: Who is the ultimate Badshah / King of Bollywood?",
+    question: "Who is the ultimate Badshah / King of Bollywood?",
     audience: "1,000 Indian moviegoers across Mumbai, Delhi & Bangalore",
+    answerFormat: "OPEN_ENDED",
     options: [
-      { id: "o1", text: "Shah Rukh Khan (SRK)", rank: 1, points: 40, percentage: 56 },
-      { id: "o2", text: "Amitabh Bachchan", rank: 2, points: 30, percentage: 24 },
-      { id: "o3", text: "Salman Khan", rank: 3, points: 20, percentage: 14 },
-      { id: "o4", text: "Aamir Khan", rank: 4, points: 10, percentage: 6 }
-    ]
-  },
-  {
-    id: "c2",
-    category: "Bollywood & Cinema",
-    question: "We surveyed 1,000 people: Which Bollywood dialogue is quoted the most in daily life?",
-    audience: "1,000 cinephiles across India",
-    options: [
-      { id: "o1", text: "Mogambo Khush Hua", rank: 1, points: 40, percentage: 42 },
-      { id: "o2", text: "Kitne Aadmi The?", rank: 2, points: 30, percentage: 31 },
-      { id: "o3", text: "Bade bade deshon mein aisi chhoti chhoti baatein...", rank: 3, points: 20, percentage: 18 },
-      { id: "o4", text: "Picture abhi baaki hai mere dost", rank: 4, points: 10, percentage: 9 }
-    ]
-  },
-  {
-    id: "c5",
-    category: "Indian Street Food & Chai",
-    question: "We surveyed 1,000 street food lovers: What is India's undisputed #1 street food snack?",
-    audience: "1,000 foodies across Delhi, Mumbai, Kolkata & Indore",
-    options: [
-      { id: "o1", text: "Pani Puri / Golgappa / Puchka", rank: 1, points: 40, percentage: 51 },
-      { id: "o2", text: "Samosa", rank: 2, points: 30, percentage: 25 },
-      { id: "o3", text: "Vada Pav", rank: 3, points: 20, percentage: 15 },
-      { id: "o4", text: "Pav Bhaji", rank: 4, points: 10, percentage: 9 }
+      {
+        id: "o1",
+        text: "Shah Rukh Khan (SRK)",
+        rank: 1,
+        points: 40,
+        percentage: 56,
+        keywords: ["srk", "shah rukh", "shahrukh", "shah rukh khan", "badshah", "king khan"]
+      },
+      {
+        id: "o2",
+        text: "Amitabh Bachchan",
+        rank: 2,
+        points: 30,
+        percentage: 24,
+        keywords: ["amitabh", "bachchan", "big b", "shehenshah"]
+      },
+      {
+        id: "o3",
+        text: "Salman Khan",
+        rank: 3,
+        points: 20,
+        percentage: 14,
+        keywords: ["salman", "bhai", "sallu", "salman khan", "bhaijaan"]
+      },
+      {
+        id: "o4",
+        text: "Aamir Khan",
+        rank: 4,
+        points: 10,
+        percentage: 6,
+        keywords: ["aamir", "aamir khan", "perfectionist"]
+      }
     ]
   },
   {
     id: "c6",
     category: "Indian Street Food & Chai",
-    question: "We surveyed 1,000 chai drinkers: What is the best biscuit to dip in hot cutting chai?",
+    question: "What is the best biscuit to dip in hot cutting chai?",
     audience: "1,000 daily tea tapri regulars across India",
+    answerFormat: "OPEN_ENDED",
     options: [
-      { id: "o1", text: "Parle-G", rank: 1, points: 40, percentage: 61 },
-      { id: "o2", text: "Rusk / Toast", rank: 2, points: 30, percentage: 21 },
-      { id: "o3", text: "Bourbon", rank: 3, points: 20, percentage: 11 },
-      { id: "o4", text: "Good Day (Butter/Cashew)", rank: 4, points: 10, percentage: 7 }
-    ]
-  },
-  {
-    id: "c12",
-    category: "Cricket & IPL",
-    question: "We surveyed 1,000 cricket fans: Who is India's greatest captain in history?",
-    audience: "1,000 active Indian cricket followers",
-    options: [
-      { id: "o1", text: "MS Dhoni (Mahi)", rank: 1, points: 40, percentage: 55 },
-      { id: "o2", text: "Rohit Sharma (Hitman)", rank: 2, points: 30, percentage: 21 },
-      { id: "o3", text: "Sourav Ganguly (Dada)", rank: 3, points: 20, percentage: 14 },
-      { id: "o4", text: "Kapil Dev", rank: 4, points: 10, percentage: 10 }
-    ]
-  },
-  {
-    id: "c15",
-    category: "Daily Desi Life & Habits",
-    question: "We surveyed 1,000 Indian families: What is stored inside the Royal Dansk blue Danish Cookie tin in Indian homes?",
-    audience: "1,000 Indian households",
-    options: [
-      { id: "o1", text: "Sewing kit (Sui-Dhaaga, buttons & scissors)", rank: 1, points: 40, percentage: 74 },
-      { id: "o2", text: "Old medicine strips & band-aids", rank: 2, points: 30, percentage: 13 },
-      { id: "o3", text: "Foreign coins & old currency notes", rank: 3, points: 20, percentage: 8 },
-      { id: "o4", text: "Actual Danish Butter Cookies (Miracle!)", rank: 4, points: 10, percentage: 5 }
-    ]
-  },
-  {
-    id: "c17",
-    category: "Daily Desi Life & Habits",
-    question: "We surveyed 1,000 shoppers: What free item do Indians always demand from the sabzi-wala?",
-    audience: "1,000 Indian vegetable market shoppers",
-    options: [
-      { id: "o1", text: "Dhaniya & Mirchi (Coriander & Green Chilies)", rank: 1, points: 40, percentage: 82 },
-      { id: "o2", text: "Extra Nimbu (Lemon)", rank: 2, points: 30, percentage: 10 },
-      { id: "o3", text: "Kari Patta (Curry leaves)", rank: 3, points: 20, percentage: 5 },
-      { id: "o4", text: "Extra plastic bag / Theli", rank: 4, points: 10, percentage: 3 }
-    ]
-  },
-  {
-    id: "c20",
-    category: "Travel & Train Journeys",
-    question: "We surveyed 1,000 IRCTC train travelers: What is the most popular berth to fight for on Indian Railways?",
-    audience: "1,000 sleeper and 3AC train passengers",
-    options: [
-      { id: "o1", text: "Side Lower (Window + Bed combo)", rank: 1, points: 40, percentage: 68 },
-      { id: "o2", text: "Upper Berth (Total peace & zero disturbance)", rank: 2, points: 30, percentage: 18 },
-      { id: "o3", text: "Side Upper", rank: 3, points: 20, percentage: 9 },
-      { id: "o4", text: "Middle Berth (Literally nobody wants this)", rank: 4, points: 10, percentage: 5 }
-    ]
-  },
-  {
-    id: "c21",
-    category: "Travel & Train Journeys",
-    question: "We surveyed 1,000 road-trippers: What is the dream road trip destination that friends always plan but cancel?",
-    audience: "1,000 college squads and travel planners",
-    options: [
-      { id: "o1", text: "Goa (The eternal cancelled plan)", rank: 1, points: 40, percentage: 72 },
-      { id: "o2", text: "Ladakh / Leh bike trip", rank: 2, points: 30, percentage: 16 },
-      { id: "o3", text: "Manali / Kasol", rank: 3, points: 20, percentage: 8 },
-      { id: "o4", text: "Rishikesh river rafting", rank: 4, points: 10, percentage: 4 }
+      {
+        id: "o1",
+        text: "Parle-G",
+        rank: 1,
+        points: 40,
+        percentage: 61,
+        keywords: ["parle g", "parle-g", "parleg"]
+      },
+      {
+        id: "o2",
+        text: "Rusk / Toast",
+        rank: 2,
+        points: 30,
+        percentage: 21,
+        keywords: ["rusk", "toast"]
+      },
+      {
+        id: "o3",
+        text: "Bourbon",
+        rank: 3,
+        points: 20,
+        percentage: 11,
+        keywords: ["bourbon", "chocolate biscuit"]
+      },
+      {
+        id: "o4",
+        text: "Good Day",
+        rank: 4,
+        points: 10,
+        percentage: 7,
+        keywords: ["good day", "goodday", "butter biscuit"]
+      }
     ]
   }
 ];
@@ -198,3 +323,41 @@ export const PASS_AND_PLAY_FRIENDS_QUESTIONS: FriendsQuestion[] = [
     followUp: "Look at their face right now, they're plotting revenge."
   }
 ];
+
+/**
+ * Client-side normalized matcher for offline Pass & Play
+ */
+export function clientMatchAnswer(rawInput: string, options: CrowdOption[]) {
+  if (!rawInput || typeof rawInput !== "string") return null;
+  const normalized = rawInput
+    .toLowerCase()
+    .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?"'’]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized) return null;
+
+  for (const opt of options) {
+    const optNorm = opt.text.toLowerCase().trim();
+    if (normalized === optNorm) return opt;
+
+    if (opt.acceptedPhrases) {
+      for (const phrase of opt.acceptedPhrases) {
+        if (normalized === phrase.toLowerCase().trim() || normalized.includes(phrase.toLowerCase().trim())) {
+          return opt;
+        }
+      }
+    }
+
+    if (opt.keywords) {
+      for (const kw of opt.keywords) {
+        const regex = new RegExp(`(^|\\b)${kw.toLowerCase().trim()}(\\b|$)`, "i");
+        if (regex.test(normalized)) {
+          return opt;
+        }
+      }
+    }
+  }
+
+  return null;
+}
