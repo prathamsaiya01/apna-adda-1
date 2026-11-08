@@ -1,9 +1,15 @@
 // apna-adda-backend/services/answerMatcher.js
 
 /**
- * Robust, deterministic, server-side Answer Matching Service
- * Normalizes text, performs word-boundary aware keyword & phrase matching,
- * resolves ambiguity deterministically, and assigns rank-based scoring.
+ * Universal Semantic Answer Matching Service
+ * Layered matching architecture:
+ *  Layer 1: Text normalization (lowercase, trim, whitespace collapse, punctuation stripping)
+ *  Layer 2: Exact canonical match (Confidence = 1.0)
+ *  Layer 3: Direct aliases and accepted phrases (Confidence = 0.95 - 0.98)
+ *  Layer 4: Word-boundary keyword & synonym matching (Confidence = 0.85 - 0.92)
+ *  Layer 5: Contextual & Hinglish semantic matching (Confidence = 0.80 - 0.90)
+ *  Layer 6: Confidence threshold evaluation (threshold >= 0.75)
+ *  Layer 7: Deterministic ambiguity and conflict resolution
  */
 
 function escapeRegExp(string) {
@@ -13,56 +19,129 @@ function escapeRegExp(string) {
 /**
  * Normalizes text:
  * 1. Convert to lowercase
- * 2. Remove punctuation (preserving alphabets, numbers, and spaces)
- * 3. Collapse multiple whitespaces to single space
- * 4. Trim leading/trailing spaces
+ * 2. Strip unnecessary punctuation while preserving alphanumeric characters and spaces
+ * 3. Collapse multiple whitespaces
+ * 4. Trim leading/trailing whitespace
  */
 function normalizeText(text) {
   if (typeof text !== "string") return "";
   return text
     .toLowerCase()
-    .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?"'’]/g, " ")
+    .replace(/['’]/g, "") // Remove contractions apostrophe cleanly e.g. "Dhoni's" -> "dhonis"
+    .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?"“”]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
 /**
- * Checks if candidate is matched with word-boundary awareness.
- * Returns match specificity score or 0 if no match.
+ * Evaluates match with word-boundary awareness.
+ * Returns { matched: boolean, isExact: boolean, matchLength: number }
  */
-function evaluatePhraseMatch(inputNormalized, targetRaw) {
-  const targetNormalized = normalizeText(targetRaw);
-  if (!targetNormalized) return 0;
+function evaluateWordBoundaryMatch(inputNorm, targetRaw) {
+  const targetNorm = normalizeText(targetRaw);
+  if (!targetNorm) return { matched: false, isExact: false, matchLength: 0 };
 
-  // Exact whole string match (Highest priority)
-  if (inputNormalized === targetNormalized) {
-    return 1000 + targetNormalized.length;
+  if (inputNorm === targetNorm) {
+    return { matched: true, isExact: true, matchLength: targetNorm.length };
   }
 
-  // Word-boundary phrase/keyword match
-  const pattern = new RegExp(`(^|\\b)${escapeRegExp(targetNormalized)}(\\b|$)`, "i");
-  if (pattern.test(inputNormalized)) {
-    return 500 + targetNormalized.length;
+  const pattern = new RegExp(`(^|\\b)${escapeRegExp(targetNorm)}(\\b|$)`, "i");
+  if (pattern.test(inputNorm)) {
+    return { matched: true, isExact: false, matchLength: targetNorm.length };
   }
 
-  return 0;
+  return { matched: false, isExact: false, matchLength: 0 };
 }
 
 /**
- * Matches a submitted player text against the 4 canonical answer categories.
- *
- * @param {string} rawInput - The user's submitted string.
- * @param {Array} answers - Array of 4 answer categories with keywords & acceptedPhrases.
- * @returns {Object} Match result with matched (boolean), answerId, rank, points, canonicalAnswer, score
+ * Common Indian English / Hinglish cricket & party contractions mapping
  */
-function matchAnswer(rawInput, answers) {
+const HINGLISH_EXPANSIONS = {
+  "thala": "ms dhoni",
+  "mahi": "ms dhoni",
+  "msd": "ms dhoni",
+  "captain cool": "ms dhoni",
+  "king kohli": "virat kohli",
+  "cheeku": "virat kohli",
+  "hitman": "rohit sharma",
+  "rohit": "rohit sharma",
+  "boom boom": "jasprit bumrah",
+  "jb": "jasprit bumrah",
+  "kung fu pandya": "hardik pandya",
+  "kingku": "rinku singh",
+  "gabbar": "shikhar dhawan",
+  "viru": "virender sehwag",
+  "bhajji": "harbhajan singh",
+  "sunny g": "sunil gavaskar",
+  "little master": "sunil gavaskar",
+  "yellow army": "csk",
+  "whistle podu": "csk",
+  "dhonis team": "csk",
+  "dhoni team": "csk",
+  "thalas team": "csk",
+  "play bold": "rcb",
+  "ee sala cup namde": "rcb",
+  "virats team": "rcb",
+  "kohli team": "rcb",
+  "paltan": "mi",
+  "mumbai paltan": "mi",
+  "rohits team": "mi",
+  "korbo lorbo": "kkr",
+  "srks team": "kkr",
+  "halla bol": "rr",
+  "pink city": "rr",
+  "sanjus team": "rr",
+  "motera": "narendra modi stadium",
+  "ahmedabad stadium": "narendra modi stadium",
+  "wankhede": "wankhede stadium",
+  "chinnaswamy": "m chinnaswamy stadium",
+  "eden": "eden gardens",
+  "twenty twenty": "t20",
+  "20 overs": "t20",
+  "twenty 20": "t20",
+  "50 overs": "odi",
+  "one day": "odi",
+  "5 day": "test cricket",
+  "five day": "test cricket",
+  "red ball": "test cricket",
+  "tracer bullet": "ravi shastri"
+};
+
+/**
+ * Expand Hinglish and colloquial shorthand
+ */
+function expandHinglishContext(normalizedInput) {
+  let expanded = normalizedInput;
+  for (const [shortForm, longForm] of Object.entries(HINGLISH_EXPANSIONS)) {
+    const pattern = new RegExp(`(^|\\b)${escapeRegExp(shortForm)}(\\b|$)`, "i");
+    if (pattern.test(normalizedInput)) {
+      expanded += " " + longForm;
+    }
+  }
+  return expanded;
+}
+
+/**
+ * Centralized Semantic Answer Matching Engine
+ *
+ * @param {string} rawInput - The user's typed response
+ * @param {Object} question - The full question object containing canonical answers, keywords, aliases, etc.
+ * @param {Object} options - Configurable threshold overrides
+ * @returns {Object} Structured matching result
+ */
+function semanticMatchAnswer(rawInput, question, options = {}) {
+  const minConfidenceThreshold = options.threshold || 0.75;
+
   if (!rawInput || typeof rawInput !== "string") {
     return {
-      matched: false,
-      answerId: null,
-      rank: null,
-      points: 0,
+      originalAnswer: rawInput || "",
+      normalizedAnswer: "",
+      canonicalAnswerId: null,
       canonicalAnswer: null,
+      matchedRank: null,
+      confidence: 0,
+      matchingMethod: "NONE",
+      status: "UNMATCHED",
       reason: "EMPTY_INPUT"
     };
   }
@@ -70,122 +149,244 @@ function matchAnswer(rawInput, answers) {
   const normalizedInput = normalizeText(rawInput);
   if (!normalizedInput) {
     return {
-      matched: false,
-      answerId: null,
-      rank: null,
-      points: 0,
+      originalAnswer: rawInput,
+      normalizedAnswer: "",
+      canonicalAnswerId: null,
       canonicalAnswer: null,
+      matchedRank: null,
+      confidence: 0,
+      matchingMethod: "NONE",
+      status: "UNMATCHED",
       reason: "EMPTY_INPUT"
     };
   }
 
-  if (!Array.isArray(answers) || answers.length === 0) {
+  const answersList = question?.answers || question?.options;
+  if (!Array.isArray(answersList) || answersList.length === 0) {
     return {
-      matched: false,
-      answerId: null,
-      rank: null,
-      points: 0,
+      originalAnswer: rawInput,
+      normalizedAnswer,
+      canonicalAnswerId: null,
       canonicalAnswer: null,
+      matchedRank: null,
+      confidence: 0,
+      matchingMethod: "NONE",
+      status: "UNMATCHED",
       reason: "NO_ANSWER_KEY"
     };
   }
 
-  const categoryMatches = [];
+  const candidateScores = [];
+  const expandedInput = expandHinglishContext(normalizedInput);
 
-  for (const cat of answers) {
+  for (const ans of answersList) {
+    const answerId = ans.id || `${question.id || "Q"}_A${ans.rank}`;
+    const canonicalText = ans.canonicalAnswer || ans.answer || ans.text;
+    const rank = Number(ans.rank);
+    const points = ans.points || (rank === 1 ? 40 : rank === 2 ? 30 : rank === 3 ? 20 : 10);
+
     let bestScore = 0;
+    let bestMethod = "NONE";
     let bestTerm = null;
 
-    // 1. Check Canonical Answer itself
-    const canonicalScore = evaluatePhraseMatch(normalizedInput, cat.canonicalAnswer);
-    if (canonicalScore > bestScore) {
-      bestScore = canonicalScore + 200; // Bonus for matching canonical name directly
-      bestTerm = cat.canonicalAnswer;
-    }
-
-    // 2. Check Accepted Phrases
-    if (Array.isArray(cat.acceptedPhrases)) {
-      for (const phrase of cat.acceptedPhrases) {
-        const score = evaluatePhraseMatch(normalizedInput, phrase);
+    // ----------------------------------------------------
+    // LAYER 2: Exact Canonical Match (Confidence = 1.0)
+    // ----------------------------------------------------
+    const canonicalMatch = evaluateWordBoundaryMatch(normalizedInput, canonicalText);
+    if (canonicalMatch.matched) {
+      if (canonicalMatch.isExact) {
+        bestScore = 1.0;
+        bestMethod = "EXACT_CANONICAL";
+        bestTerm = canonicalText;
+      } else {
+        const score = 0.94 + Math.min(0.04, canonicalMatch.matchLength / 50);
         if (score > bestScore) {
-          bestScore = score + 100; // Accepted phrases carry high specificity
-          bestTerm = phrase;
+          bestScore = score;
+          bestMethod = "CANONICAL_PHRASE";
+          bestTerm = canonicalText;
         }
       }
     }
 
-    // 3. Check Keywords
-    if (Array.isArray(cat.keywords)) {
-      for (const kw of cat.keywords) {
-        const score = evaluatePhraseMatch(normalizedInput, kw);
+    // ----------------------------------------------------
+    // LAYER 3: Aliases & Accepted Phrases (Confidence = 0.92 - 0.98)
+    // ----------------------------------------------------
+    const aliases = [
+      ...(Array.isArray(ans.aliases) ? ans.aliases : []),
+      ...(Array.isArray(ans.acceptedPhrases) ? ans.acceptedPhrases : [])
+    ];
+
+    for (const alias of aliases) {
+      const match = evaluateWordBoundaryMatch(normalizedInput, alias);
+      if (match.matched) {
+        const score = match.isExact
+          ? 0.98
+          : 0.92 + Math.min(0.05, match.matchLength / 40);
         if (score > bestScore) {
           bestScore = score;
+          bestMethod = "ACCEPTED_PHRASE";
+          bestTerm = alias;
+        }
+      }
+    }
+
+    // ----------------------------------------------------
+    // LAYER 4: Keywords & Synonyms with Word Boundary (Confidence = 0.85 - 0.92)
+    // ----------------------------------------------------
+    const keywords = [
+      ...(Array.isArray(ans.keywords) ? ans.keywords : []),
+      ...(Array.isArray(ans.synonyms) ? ans.synonyms : [])
+    ];
+
+    for (const kw of keywords) {
+      const match = evaluateWordBoundaryMatch(normalizedInput, kw);
+      if (match.matched) {
+        const score = match.isExact ? 0.91 : 0.85 + Math.min(0.04, match.matchLength / 40);
+        if (score > bestScore) {
+          bestScore = score;
+          bestMethod = "KEYWORD_SYNONYM";
           bestTerm = kw;
         }
       }
     }
 
+    // ----------------------------------------------------
+    // LAYER 5: Contextual & Hinglish Semantic Matching (Confidence = 0.80 - 0.90)
+    // ----------------------------------------------------
+    const hinglishList = [
+      ...(Array.isArray(ans.hinglish) ? ans.hinglish : []),
+      ...(Array.isArray(ans.spellingVariations) ? ans.spellingVariations : []),
+      ...(Array.isArray(ans.semanticExamples) ? ans.semanticExamples : [])
+    ];
+
+    for (const h of hinglishList) {
+      const match = evaluateWordBoundaryMatch(normalizedInput, h);
+      if (match.matched) {
+        const score = match.isExact ? 0.90 : 0.82 + Math.min(0.04, match.matchLength / 40);
+        if (score > bestScore) {
+          bestScore = score;
+          bestMethod = "SEMANTIC_CONTEXT";
+          bestTerm = h;
+        }
+      }
+    }
+
+    // Also check expanded Hinglish representation against canonical / aliases
+    if (expandedInput !== normalizedInput) {
+      const expandedCanonicalMatch = evaluateWordBoundaryMatch(expandedInput, canonicalText);
+      if (expandedCanonicalMatch.matched && bestScore < 0.88) {
+        bestScore = 0.88;
+        bestMethod = "SEMANTIC_CONTEXT";
+        bestTerm = "hinglish_expansion";
+      }
+    }
+
     if (bestScore > 0) {
-      categoryMatches.push({
-        answerId: cat.id,
-        rank: cat.rank,
-        canonicalAnswer: cat.canonicalAnswer,
-        basePoints: cat.points || (cat.rank === 1 ? 40 : cat.rank === 2 ? 30 : cat.rank === 3 ? 20 : 10),
-        score: bestScore,
+      candidateScores.push({
+        canonicalAnswerId: answerId,
+        canonicalAnswer: canonicalText,
+        rank,
+        points,
+        confidence: Math.round(bestScore * 100) / 100,
+        matchingMethod: bestMethod,
         matchedTerm: bestTerm
       });
     }
   }
 
-  // No match
-  if (categoryMatches.length === 0) {
+  // ----------------------------------------------------
+  // LAYER 6: Threshold Evaluation
+  // ----------------------------------------------------
+  if (candidateScores.length === 0) {
     return {
-      matched: false,
-      answerId: null,
-      rank: null,
-      points: 0,
+      originalAnswer: rawInput,
+      normalizedAnswer: normalizedInput,
+      canonicalAnswerId: null,
       canonicalAnswer: null,
-      reason: "UNMATCHED",
-      normalizedInput
+      matchedRank: null,
+      confidence: 0,
+      matchingMethod: "NONE",
+      status: "UNMATCHED",
+      reason: "NO_MATCH"
     };
   }
 
-  // Sort by specificity score descending
-  categoryMatches.sort((a, b) => b.score - a.score);
+  // Sort candidates by confidence descending
+  candidateScores.sort((a, b) => b.confidence - a.confidence);
+  const topCandidate = candidateScores[0];
 
-  const topMatch = categoryMatches[0];
+  if (topCandidate.confidence < minConfidenceThreshold) {
+    return {
+      originalAnswer: rawInput,
+      normalizedAnswer: normalizedInput,
+      canonicalAnswerId: null,
+      canonicalAnswer: null,
+      matchedRank: null,
+      confidence: topCandidate.confidence,
+      matchingMethod: topCandidate.matchingMethod,
+      status: "UNMATCHED",
+      reason: "BELOW_CONFIDENCE_THRESHOLD"
+    };
+  }
 
-  // Check for ambiguous tie with another category at the exact same specificity
-  if (categoryMatches.length > 1) {
-    const secondMatch = categoryMatches[1];
-    if (topMatch.score === secondMatch.score && topMatch.answerId !== secondMatch.answerId) {
-      // Ambiguous match without clear specificity resolution: resolve as unmatched safely
+  // ----------------------------------------------------
+  // LAYER 7: Ambiguity & Conflict Resolution
+  // ----------------------------------------------------
+  if (candidateScores.length > 1) {
+    const secondCandidate = candidateScores[1];
+    const diff = topCandidate.confidence - secondCandidate.confidence;
+
+    // If two different categories match with indistinguishable confidence (diff < 0.04)
+    if (diff < 0.04 && topCandidate.canonicalAnswerId !== secondCandidate.canonicalAnswerId) {
       return {
-        matched: false,
-        answerId: null,
-        rank: null,
-        points: 0,
+        originalAnswer: rawInput,
+        normalizedAnswer: normalizedInput,
+        canonicalAnswerId: null,
         canonicalAnswer: null,
-        reason: "AMBIGUOUS_MATCH",
-        ambiguousCategories: [topMatch.canonicalAnswer, secondMatch.canonicalAnswer],
-        normalizedInput
+        matchedRank: null,
+        confidence: topCandidate.confidence,
+        matchingMethod: "AMBIGUITY_CHECK",
+        status: "AMBIGUOUS",
+        reason: "MULTIPLE_CATEGORIES_PLAUSIBLE",
+        ambiguousCandidates: [topCandidate.canonicalAnswer, secondCandidate.canonicalAnswer]
       };
     }
   }
 
   return {
-    matched: true,
-    answerId: topMatch.answerId,
-    rank: topMatch.rank,
-    points: topMatch.basePoints,
-    canonicalAnswer: topMatch.canonicalAnswer,
-    matchedTerm: topMatch.matchedTerm,
-    normalizedInput
+    originalAnswer: rawInput,
+    normalizedAnswer: normalizedInput,
+    canonicalAnswerId: topCandidate.canonicalAnswerId,
+    canonicalAnswer: topCandidate.canonicalAnswer,
+    matchedRank: topCandidate.rank,
+    confidence: topCandidate.confidence,
+    matchingMethod: topCandidate.matchingMethod,
+    status: "MATCHED",
+    reason: null,
+    points: topCandidate.points
   };
 }
 
 module.exports = {
   normalizeText,
-  matchAnswer,
-  evaluatePhraseMatch
+  evaluateWordBoundaryMatch,
+  semanticMatchAnswer,
+  // Maintain backward compatibility with matchAnswer
+  matchAnswer: (rawInput, answersList) => {
+    const res = semanticMatchAnswer(rawInput, { answers: answersList });
+    const legacyReason = res.status === "AMBIGUOUS" ? "AMBIGUOUS_MATCH" : (res.status === "UNMATCHED" ? "UNMATCHED" : res.reason);
+    return {
+      matched: res.status === "MATCHED",
+      answerId: res.canonicalAnswerId,
+      rank: res.matchedRank,
+      points: res.points || 0,
+      canonicalAnswer: res.canonicalAnswer,
+      reason: legacyReason,
+      status: res.status,
+      confidence: res.confidence,
+      matchingMethod: res.matchingMethod,
+      originalAnswer: res.originalAnswer,
+      normalizedAnswer: res.normalizedAnswer
+    };
+  }
 };

@@ -1,0 +1,612 @@
+{
+  "game": "Majority Rules",
+  "mode": "Classic",
+  "audienceProfile": {
+    "country": "India",
+    "region": "Urban India",
+    "ageGroup": "16-24",
+    "audience": "Indian college students and young adults"
+  },
+  "questions": [
+    {
+      "id": "CRICKET_001",
+      "question": "Which IPL team has the most passionate fanbase?",
+      "category": "Cricket & IPL",
+      "answers": [
+        {
+          "rank": 1,
+          "answer": "CSK",
+          "points": 40,
+          "estimatedShare": 40,
+          "aliases": ["Chennai Super Kings"]
+        },
+        {
+          "rank": 2,
+          "answer": "RCB",
+          "points": 30,
+          "estimatedShare": 30,
+          "aliases": ["Royal Challengers Bengaluru", "Royal Challengers Bangalore"]
+        },
+        {
+          "rank": 3,
+          "answer": "MI",
+          "points": 20,
+          "estimatedShare": 20,
+          "aliases": ["Mumbai Indians"]
+        },
+        {
+          "rank": 4,
+          "answer": "KKR",
+          "points": 10,
+          "estimatedShare": 10,
+          "aliases": ["Kolkata Knight Riders"]
+        }
+      ],
+      "predictedMajority": "CSK",
+      "confidence": "Medium",
+      "reason": "CSK's sustained success, loyal supporters, and association with MS Dhoni make it a plausible favorite.",
+      "sourceType": "AI_ESTIMATE",
+      "validationStatus": "UNVERIFIED"
+    },
+    {
+      "id": "CRICKET_002",
+      "question": "Which IPL team has the most iconic jersey?",
+      "category": "Cricket & IPL",
+      "answers": [
+        {
+          "rank": 1,
+          "answer": "CSK",
+          "points": 40,
+          "estimatedShare": 35,
+          "aliases": ["Chennai Super Kings", "Yellow jersey"]
+        },
+        {
+          "rank": 2,
+          "answer": "MI",
+          "points": 30,
+          "estimatedShare": 30,
+          "aliases": ["Mumbai Indians", "Blue and gold jersey"]
+        },
+        {
+          "rank": 3,
+          "answer": "RCB",
+          "points": 20,
+          "estimatedShare": 20,
+          "aliases": ["Royal Challengers Bengaluru", "Royal Challengers Bangalore"]
+        },
+        {
+          "rank": 4,
+          "answer": "RR",
+          "points": 10,
+          "estimatedShare": 15,
+          "aliases": ["Rajasthan Royals", "Pink jersey"]
+        }
+      ],
+      "predictedMajority": "CSK",
+      "confidence": "Low",
+      "reason": "CSK's bright yellow jersey is instantly recognizable and has become closely associated with the franchise.",
+      "sourceType": "AI_ESTIMATE",
+      "validationStatus": "UNVERIFIED"
+    },
+    {
+      "id": "CRICKET_003",
+      "question": "Which IPL rivalry is the most entertaining?",
+      "category": "Cricket & IPL",
+      "answers": [
+        {
+          "rank": 1,
+          "answer": "MI vs CSK",
+          "points": 40,
+          "estimatedShare": 40,
+          "aliases": ["Mumbai Indians vs Chennai Super Kings", "El Clasico of IPL"]
+        },
+        {
+          "rank": 2,
+          "answer": "RCB vs CSK",
+          "points": 30,
+          "estimatedShare": 30,
+          "aliases": ["Royal Challengers Bengaluru vs Chennai Super Kings"]
+        },
+        {
+          "rank": 3,
+          "answer": "MI vs RCB",
+          "points": 20,
+          "estimatedShare": 20,
+          "aliases": ["Mumbai Indians vs Royal Challengers Bengaluru"]
+        },
+        {
+          "rank": 4,
+          "answer": "KKR vs RCB",
+          "points": 10,
+          "estimatedShare": 10,
+          "aliases": ["Kolkata Knight Riders vs Royal Challengers Bengaluru"]
+        }
+      ],
+      "predictedMajority": "MI vs CSK",
+      "confidence": "Medium",
+      "reason": "The rivalry between two of the IPL's most successful franchises is associated with high-pressure matches and memorable finals.",
+      "sourceType": "AI_ESTIMATE",
+      "validationStatus": "UNVERIFIED"
+    },
+    {
+      "id": "CRICKET_004",
+      "question": "Who is the most popular Indian cricketer among Gen Z?",
+      "category": "Cricket & IPL",
+      "answers": [
+        {
+          "rank": 1,
+          "answer": "Virat Kohli",
+          "points": 40,
+          "estimatedShare": 45,
+          "aliases": ["King Kohli", "Kohli"]
+        },
+        {
+          "rank": 2,
+          "answer": "MS Dhoni",
+          "points": 30,
+          "estimatedShare": 25,
+          "aliases": ["Mahendra Singh Dhoni", "Thala"]
+        },
+        {
+          "rank": 3,
+          "answer": "Rohit Sharma",
+          "points": 20,
+          "estimatedShare": 20,
+          "aliases": ["Hitman", "Rohit"]
+        },
+        {
+          "rank": 4,
+          "answer": "Jasprit Bumrah",
+          "points": 10,
+          "estimatedShare": 10,
+          "aliases": ["Bumrah", "JB"]
+        }
+      ],
+      "predictedMajority": "Virat Kohli",
+      "confidence": "Medium",
+      "reason": "Kohli's popularity, aggressive personality, social media presence, and long career make him a strong Gen Z favorite.",
+      "sourceType": "AI_ESTIMATE",
+      "validationStatus": "UNVERIFIED"
+    },
+    {
+      "id": "CRICKET_005",
+      "question": "Which cricketer would make the best captain?",
+      "category": "Cricket & IPL",
+      "answers": [
+        {
+          "rank": 1,
+          "answer": "MS Dhoni",
+          "points": 40,
+          "estimatedShare": 45,
+          "aliases": ["Mahendra Singh Dhoni", "Thala"]
+        },
+        {
+          "rank": 2,
+          "answer": "Rohit Sharma",
+          "points": 30,
+          "estimatedShare": 25,
+          "aliases": ["Hitman"]
+        },
+        {
+          "rank": 3,
+          "answer": "Virat Kohli",
+          "points": 20,
+          "estimatedShare": 20,
+          "aliases": ["King Kohli"]
+        },
+        {
+          "rank": 4,
+          "answer": "Hardik Pandya",
+          "points": 10,
+          "estimatedShare": 10,
+          "aliases": ["Hardik"]
+        }
+      ],
+      "predictedMajority": "MS Dhoni",
+      "confidence": "Medium",
+      "reason": "Dhoni's reputation for calm decision-making, tactical awareness, and leadership makes him a likely popular choice.",
+      "sourceType": "AI_ESTIMATE",
+      "validationStatus": "UNVERIFIED"
+    },
+    {
+      "id": "CRICKET_006",
+      "question": "Which IPL player is the most entertaining to watch?",
+      "category": "Cricket & IPL",
+      "answers": [
+        {
+          "rank": 1,
+          "answer": "Virat Kohli",
+          "points": 40,
+          "estimatedShare": 35,
+          "aliases": ["Kohli", "King Kohli"]
+        },
+        {
+          "rank": 2,
+          "answer": "MS Dhoni",
+          "points": 30,
+          "estimatedShare": 30,
+          "aliases": ["Dhoni", "Thala"]
+        },
+        {
+          "rank": 3,
+          "answer": "Rashid Khan",
+          "points": 20,
+          "estimatedShare": 20,
+          "aliases": ["Rashid"]
+        },
+        {
+          "rank": 4,
+          "answer": "Rinku Singh",
+          "points": 10,
+          "estimatedShare": 15,
+          "aliases": ["Rinku"]
+        }
+      ],
+      "predictedMajority": "Virat Kohli",
+      "confidence": "Low",
+      "reason": "Kohli's intensity, expressive celebrations, and aggressive batting style make him an entertaining player for many fans.",
+      "sourceType": "AI_ESTIMATE",
+      "validationStatus": "UNVERIFIED"
+    },
+    {
+      "id": "CRICKET_007",
+      "question": "Which cricket format is the most exciting?",
+      "category": "Cricket & IPL",
+      "answers": [
+        {
+          "rank": 1,
+          "answer": "T20",
+          "points": 40,
+          "estimatedShare": 50,
+          "aliases": ["Twenty20", "Twenty-Twenty"]
+        },
+        {
+          "rank": 2,
+          "answer": "ODI",
+          "points": 30,
+          "estimatedShare": 25,
+          "aliases": ["One Day International", "One-day cricket"]
+        },
+        {
+          "rank": 3,
+          "answer": "Test Cricket",
+          "points": 20,
+          "estimatedShare": 15,
+          "aliases": ["Tests", "Five-day cricket"]
+        },
+        {
+          "rank": 4,
+          "answer": "The Hundred",
+          "points": 10,
+          "estimatedShare": 10,
+          "aliases": ["100-ball cricket"]
+        }
+      ],
+      "predictedMajority": "T20",
+      "confidence": "High",
+      "reason": "T20 matches are short, high-scoring, and easy to fit into the schedules of young audiences.",
+      "sourceType": "AI_ESTIMATE",
+      "validationStatus": "UNVERIFIED"
+    },
+    {
+      "id": "CRICKET_008",
+      "question": "Which IPL team has the best social media presence?",
+      "category": "Cricket & IPL",
+      "answers": [
+        {
+          "rank": 1,
+          "answer": "RCB",
+          "points": 40,
+          "estimatedShare": 40,
+          "aliases": ["Royal Challengers Bengaluru", "Royal Challengers Bangalore"]
+        },
+        {
+          "rank": 2,
+          "answer": "CSK",
+          "points": 30,
+          "estimatedShare": 25,
+          "aliases": ["Chennai Super Kings"]
+        },
+        {
+          "rank": 3,
+          "answer": "MI",
+          "points": 20,
+          "estimatedShare": 20,
+          "aliases": ["Mumbai Indians"]
+        },
+        {
+          "rank": 4,
+          "answer": "KKR",
+          "points": 10,
+          "estimatedShare": 15,
+          "aliases": ["Kolkata Knight Riders"]
+        }
+      ],
+      "predictedMajority": "RCB",
+      "confidence": "Medium",
+      "reason": "RCB's highly engaged fanbase, humorous content, and strong online identity make it a plausible favorite.",
+      "sourceType": "AI_ESTIMATE",
+      "validationStatus": "UNVERIFIED"
+    },
+    {
+      "id": "CRICKET_009",
+      "question": "Which cricketer would be the best actor?",
+      "category": "Cricket & IPL",
+      "answers": [
+        {
+          "rank": 1,
+          "answer": "Virat Kohli",
+          "points": 40,
+          "estimatedShare": 35,
+          "aliases": ["Kohli", "King Kohli"]
+        },
+        {
+          "rank": 2,
+          "answer": "Shikhar Dhawan",
+          "points": 30,
+          "estimatedShare": 30,
+          "aliases": ["Gabbar", "Dhawan"]
+        },
+        {
+          "rank": 3,
+          "answer": "Hardik Pandya",
+          "points": 20,
+          "estimatedShare": 20,
+          "aliases": ["Hardik"]
+        },
+        {
+          "rank": 4,
+          "answer": "Rishabh Pant",
+          "points": 10,
+          "estimatedShare": 15,
+          "aliases": ["Pant"]
+        }
+      ],
+      "predictedMajority": "Virat Kohli",
+      "confidence": "Low",
+      "reason": "Kohli's expressive personality and dramatic on-field reactions could make him a popular hypothetical casting choice.",
+      "sourceType": "AI_ESTIMATE",
+      "validationStatus": "UNVERIFIED"
+    },
+    {
+      "id": "CRICKET_010",
+      "question": "Which cricket stadium has the best atmosphere?",
+      "category": "Cricket & IPL",
+      "answers": [
+        {
+          "rank": 1,
+          "answer": "Eden Gardens",
+          "points": 40,
+          "estimatedShare": 35,
+          "aliases": ["Kolkata", "Eden Gardens Stadium"]
+        },
+        {
+          "rank": 2,
+          "answer": "Wankhede Stadium",
+          "points": 30,
+          "estimatedShare": 30,
+          "aliases": ["Wankhede", "Mumbai"]
+        },
+        {
+          "rank": 3,
+          "answer": "M. Chinnaswamy Stadium",
+          "points": 20,
+          "estimatedShare": 20,
+          "aliases": ["Chinnaswamy Stadium", "Bengaluru"]
+        },
+        {
+          "rank": 4,
+          "answer": "Narendra Modi Stadium",
+          "points": 10,
+          "estimatedShare": 15,
+          "aliases": ["Ahmedabad Stadium", "Motera"]
+        }
+      ],
+      "predictedMajority": "Eden Gardens",
+      "confidence": "Low",
+      "reason": "Eden Gardens is associated with a large, vocal cricket audience and a long history of memorable matches.",
+      "sourceType": "AI_ESTIMATE",
+      "validationStatus": "UNVERIFIED"
+    },
+    {
+      "id": "CRICKET_011",
+      "question": "Which IPL team has the most loyal fans?",
+      "category": "Cricket & IPL",
+      "answers": [
+        {
+          "rank": 1,
+          "answer": "CSK",
+          "points": 40,
+          "estimatedShare": 40,
+          "aliases": ["Chennai Super Kings"]
+        },
+        {
+          "rank": 2,
+          "answer": "RCB",
+          "points": 30,
+          "estimatedShare": 30,
+          "aliases": ["Royal Challengers Bengaluru", "Royal Challengers Bangalore"]
+        },
+        {
+          "rank": 3,
+          "answer": "MI",
+          "points": 20,
+          "estimatedShare": 20,
+          "aliases": ["Mumbai Indians"]
+        },
+        {
+          "rank": 4,
+          "answer": "KKR",
+          "points": 10,
+          "estimatedShare": 10,
+          "aliases": ["Kolkata Knight Riders"]
+        }
+      ],
+      "predictedMajority": "CSK",
+      "confidence": "Medium",
+      "reason": "CSK supporters are widely associated with long-term loyalty, particularly through the team's connection with MS Dhoni.",
+      "sourceType": "AI_ESTIMATE",
+      "validationStatus": "UNVERIFIED"
+    },
+    {
+      "id": "CRICKET_012",
+      "question": "Which cricket shot is the most satisfying to watch?",
+      "category": "Cricket & IPL",
+      "answers": [
+        {
+          "rank": 1,
+          "answer": "Cover Drive",
+          "points": 40,
+          "estimatedShare": 40,
+          "aliases": ["Straight cover drive", "Classic cover drive"]
+        },
+        {
+          "rank": 2,
+          "answer": "Helicopter Shot",
+          "points": 30,
+          "estimatedShare": 25,
+          "aliases": ["Dhoni helicopter shot"]
+        },
+        {
+          "rank": 3,
+          "answer": "Pull Shot",
+          "points": 20,
+          "estimatedShare": 20,
+          "aliases": ["Pull"]
+        },
+        {
+          "rank": 4,
+          "answer": "Straight Drive",
+          "points": 10,
+          "estimatedShare": 15,
+          "aliases": ["Straight bat drive"]
+        }
+      ],
+      "predictedMajority": "Cover Drive",
+      "confidence": "Medium",
+      "reason": "The cover drive is admired for its timing, balance, and visual elegance, making it a popular choice among cricket fans.",
+      "sourceType": "AI_ESTIMATE",
+      "validationStatus": "UNVERIFIED"
+    },
+    {
+      "id": "CRICKET_013",
+      "question": "Which IPL team would you support if your favorite team disappeared?",
+      "category": "Cricket & IPL",
+      "answers": [
+        {
+          "rank": 1,
+          "answer": "CSK",
+          "points": 40,
+          "estimatedShare": 35,
+          "aliases": ["Chennai Super Kings"]
+        },
+        {
+          "rank": 2,
+          "answer": "MI",
+          "points": 30,
+          "estimatedShare": 30,
+          "aliases": ["Mumbai Indians"]
+        },
+        {
+          "rank": 3,
+          "answer": "RCB",
+          "points": 20,
+          "estimatedShare": 20,
+          "aliases": ["Royal Challengers Bengaluru", "Royal Challengers Bangalore"]
+        },
+        {
+          "rank": 4,
+          "answer": "KKR",
+          "points": 10,
+          "estimatedShare": 15,
+          "aliases": ["Kolkata Knight Riders"]
+        }
+      ],
+      "predictedMajority": "CSK",
+      "confidence": "Low",
+      "reason": "CSK's broad national following and reputation as a consistently competitive franchise make it a plausible alternative favorite.",
+      "sourceType": "AI_ESTIMATE",
+      "validationStatus": "UNVERIFIED"
+    },
+    {
+      "id": "CRICKET_014",
+      "question": "Which cricketer would be the best commentator?",
+      "category": "Cricket & IPL",
+      "answers": [
+        {
+          "rank": 1,
+          "answer": "Ravi Shastri",
+          "points": 40,
+          "estimatedShare": 35,
+          "aliases": ["Shastri"]
+        },
+        {
+          "rank": 2,
+          "answer": "Virender Sehwag",
+          "points": 30,
+          "estimatedShare": 30,
+          "aliases": ["Viru", "Sehwag"]
+        },
+        {
+          "rank": 3,
+          "answer": "Sunil Gavaskar",
+          "points": 20,
+          "estimatedShare": 20,
+          "aliases": ["Gavaskar"]
+        },
+        {
+          "rank": 4,
+          "answer": "Harbhajan Singh",
+          "points": 10,
+          "estimatedShare": 15,
+          "aliases": ["Bhajji"]
+        }
+      ],
+      "predictedMajority": "Ravi Shastri",
+      "confidence": "Medium",
+      "reason": "Shastri's energetic delivery, memorable catchphrases, and established commentary experience make him a likely popular choice.",
+      "sourceType": "AI_ESTIMATE",
+      "validationStatus": "UNVERIFIED"
+    },
+    {
+      "id": "CRICKET_015",
+      "question": "Which cricket moment is the most iconic?",
+      "category": "Cricket & IPL",
+      "answers": [
+        {
+          "rank": 1,
+          "answer": "India winning the 2011 World Cup",
+          "points": 40,
+          "estimatedShare": 45,
+          "aliases": ["2011 World Cup final", "Dhoni's World Cup-winning six"]
+        },
+        {
+          "rank": 2,
+          "answer": "India winning the 2024 T20 World Cup",
+          "points": 30,
+          "estimatedShare": 25,
+          "aliases": ["2024 T20 World Cup victory", "India's 2024 World Cup win"]
+        },
+        {
+          "rank": 3,
+          "answer": "Yuvraj Singh's six sixes",
+          "points": 20,
+          "estimatedShare": 20,
+          "aliases": ["Yuvraj's six sixes", "Six sixes in an over"]
+        },
+        {
+          "rank": 4,
+          "answer": "India winning the 2007 T20 World Cup",
+          "points": 10,
+          "estimatedShare": 10,
+          "aliases": ["2007 T20 World Cup final", "India's first T20 World Cup"]
+        }
+      ],
+      "predictedMajority": "India winning the 2011 World Cup",
+      "confidence": "High",
+      "reason": "The 2011 World Cup victory is remembered for India's historic win, Dhoni's final six, and the emotional celebration across the country.",
+      "sourceType": "AI_ESTIMATE",
+      "validationStatus": "UNVERIFIED"
+    }
+  ]
+}

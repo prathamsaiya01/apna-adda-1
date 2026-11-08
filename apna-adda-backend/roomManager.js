@@ -322,6 +322,20 @@ class RoomManager {
     const engine = this.gameEngines.get(room._id);
     if (engine) {
       engine.broadcastState();
+      // Automatically send private card/state to this player upon joining game channel
+      if (typeof engine.getPrivateCard === 'function') {
+        const card = engine.getPrivateCard(userId);
+        if (card) {
+          socket.emit('privateCard', card);
+          socket.emit('privateStateUpdate', { bluffCard: card });
+        }
+      }
+      if (typeof engine.getPrivateData === 'function') {
+        const pdata = engine.getPrivateData(userId);
+        if (pdata) {
+          socket.emit('privateData', pdata);
+        }
+      }
     } else {
       this.io.to(`game_${room._id}`).emit("playersUpdate", room.players);
     }

@@ -546,22 +546,32 @@ class BluffMastersEngine {
   }
 
   // -------------------------------------------------------------
+  // PRIVATE CARD GETTER (FOR RECONNECTS & LATE MOUNTS)
+  // -------------------------------------------------------------
+  getPrivateCard(userId) {
+    if (this.privateRoundData && this.privateRoundData.questionPair) {
+      const isBluffer = this.privateRoundData.blufferUserIds.includes(userId);
+      return {
+        role: isBluffer ? 'bluffer' : 'regular',
+        isBluffer,
+        question: isBluffer ? this.privateRoundData.questionPair.blufferQuestion : this.privateRoundData.questionPair.regularQuestion,
+        category: this.privateRoundData.questionPair.category,
+        difficulty: this.privateRoundData.questionPair.difficulty,
+        roundNumber: this.state.roundNumber,
+        totalRounds: this.state.totalRounds,
+        timer: this.state.timer
+      };
+    }
+    return null;
+  }
+
+  // -------------------------------------------------------------
   // ACTION DISPATCHER
   // -------------------------------------------------------------
   handleAction(userId, action, payload, callback) {
     if (action === 'getPrivateCard') {
-      if (this.privateRoundData && this.privateRoundData.questionPair) {
-        const isBluffer = this.privateRoundData.blufferUserIds.includes(userId);
-        const card = {
-          role: isBluffer ? 'bluffer' : 'regular',
-          isBluffer,
-          question: isBluffer ? this.privateRoundData.questionPair.blufferQuestion : this.privateRoundData.questionPair.regularQuestion,
-          category: this.privateRoundData.questionPair.category,
-          difficulty: this.privateRoundData.questionPair.difficulty,
-          roundNumber: this.state.roundNumber,
-          totalRounds: this.state.totalRounds,
-          timer: this.state.timer
-        };
+      const card = this.getPrivateCard(userId);
+      if (card) {
         return callback && callback({ ok: true, card, privateCard: card });
       }
       return callback && callback({ error: "No active round data available." });

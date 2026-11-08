@@ -1481,6 +1481,51 @@ const BATCH_REGISTRY = new Map();
 BATCH_REGISTRY.set(1, BATCH_1);
 BATCH_REGISTRY.set(2, BATCH_2);
 
+// Auto-load Cricket & IPL Batch 1 (CRICKET_001 to CRICKET_015) if available
+const path = require('path');
+const fs = require('fs');
+
+let BATCH_CRICKET_1 = null;
+try {
+  const jsonPath = path.join(__dirname, '../data/whats_the_majority_batch_1_questions_1_15.json');
+  if (fs.existsSync(jsonPath)) {
+    const raw = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+    if (Array.isArray(raw.questions)) {
+      BATCH_CRICKET_1 = {
+        batchId: 101,
+        batchName: "Cricket & IPL Fanbase Edition (Batch 1)",
+        questions: raw.questions.map((q, idx) => ({
+          id: q.id || `CRICKET_${String(idx + 1).padStart(3, '0')}`,
+          batchId: 101,
+          questionNumber: idx + 1,
+          question: q.question,
+          category: q.category || "Cricket & IPL",
+          answerFormat: "OPEN_ENDED",
+          audienceProfile: "Indian cricket fans & college students",
+          answers: (q.answers || []).map((a, aIdx) => ({
+            id: `${q.id || 'cricket'}_ans_${a.rank || aIdx + 1}`,
+            rank: a.rank,
+            canonicalAnswer: a.answer,
+            points: a.points || (a.rank === 1 ? 40 : a.rank === 2 ? 30 : a.rank === 3 ? 20 : 10),
+            estimatedShare: a.estimatedShare,
+            aliases: a.aliases || [],
+            keywords: [a.answer.toLowerCase(), ...(a.aliases || []).map(x => x.toLowerCase())],
+            acceptedPhrases: a.aliases || []
+          })),
+          predictedMajority: q.predictedMajority,
+          confidence: q.confidence,
+          reason: q.reason,
+          sourceType: q.sourceType || "AI_ESTIMATE",
+          validationStatus: q.validationStatus || "UNVERIFIED"
+        }))
+      };
+      BATCH_REGISTRY.set(101, BATCH_CRICKET_1);
+    }
+  }
+} catch (e) {
+  console.warn("Could not auto-load cricket batch:", e.message);
+}
+
 /**
  * Register or import a new batch of 15 questions.
  * Validates schema and ensures integrity without modifying game engines.

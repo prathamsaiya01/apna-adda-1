@@ -245,25 +245,48 @@ export const BluffMasters: React.FC<BluffMastersProps> = ({
       })
       .catch(err => console.warn('Could not pre-fetch room:', err));
 
+    const requestPrivateCard = () => {
+      socket.emit(
+        'gameAction',
+        {
+          roomId,
+          action: 'getPrivateCard',
+          payload: { userId }
+        },
+        (res: any) => {
+          if (res?.card) {
+            setPrivateCard(res.card);
+          }
+        }
+      );
+    };
+
     // Join room's game socket channel
     socket.emit('joinGame', { roomId, userId }, (res: any) => {
       if (res?.error) console.warn('joinGame error:', res.error);
+      requestPrivateCard();
     });
 
     // Proactively request private card in case of reload
-    socket.emit(
-      'gameAction',
-      {
-        roomId,
-        action: 'getPrivateCard',
-        payload: { userId }
-      },
-      (res: any) => {
-        if (res?.card) {
-          setPrivateCard(res.card);
-        }
+    requestPrivateCard();
+
+    const handlePlayersUpdate = (roomPlayers: Player[]) => {
+      if (Array.isArray(roomPlayers) && roomPlayers.length > 0) {
+        setPlayers(roomPlayers);
       }
-    );
+    };
+
+    const handleRoomUpdate = (roomData: any) => {
+      if (roomData && Array.isArray(roomData.players) && roomData.players.length > 0) {
+        setPlayers(roomData.players.map((rp: any, idx: number) => ({
+          id: rp.userId || rp._id || String(idx),
+          userId: rp.userId,
+          name: rp.name,
+          score: rp.score || 0,
+          connected: rp.connected !== false
+        })));
+      }
+    };
 
     const handleGameState = (payload: any) => {
       const gKey = (payload.gameKey || '').toLowerCase();
@@ -321,6 +344,8 @@ export const BluffMasters: React.FC<BluffMastersProps> = ({
     };
 
     socket.on('gameStateUpdate', handleGameState);
+    socket.on('playersUpdate', handlePlayersUpdate);
+    socket.on('roomUpdate', handleRoomUpdate);
     socket.on('privateCard', handlePrivateCard);
     socket.on('privateStateUpdate', handlePrivateStateUpdate);
     socket.on('timerTick', handleTimerTick);
@@ -330,6 +355,8 @@ export const BluffMasters: React.FC<BluffMastersProps> = ({
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
       socket.off('gameStateUpdate', handleGameState);
+      socket.off('playersUpdate', handlePlayersUpdate);
+      socket.off('roomUpdate', handleRoomUpdate);
       socket.off('privateCard', handlePrivateCard);
       socket.off('privateStateUpdate', handlePrivateStateUpdate);
       socket.off('timerTick', handleTimerTick);
@@ -587,6 +614,25 @@ export const BluffMasters: React.FC<BluffMastersProps> = ({
   // -------------------------------------------------------------
   // ONLINE ACTIONS
   // -------------------------------------------------------------
+  const handleManualFetchCard = () => {
+    if (!roomId) return;
+    socket.emit(
+      'gameAction',
+      {
+        roomId,
+        action: 'getPrivateCard',
+        payload: { userId }
+      },
+      (res: any) => {
+        if (res?.card) {
+          setPrivateCard(res.card);
+        } else if (res?.error) {
+          setErrorFeedback(res.error);
+        }
+      }
+    );
+  };
+
   const handleSubmitAnswer = (e: React.FormEvent) => {
     e.preventDefault();
     if (!answerInput.trim() || isSubmitting || hasSubmittedAnswer) return;
@@ -1674,9 +1720,17 @@ export const BluffMasters: React.FC<BluffMastersProps> = ({
                 </div>
               </div>
             ) : (
-              <div className="p-8 text-center bg-white/5 rounded-2xl border border-white/10">
+              <div className="p-8 text-center bg-white/5 rounded-2xl border border-white/10 space-y-3">
                 <Loader className="w-8 h-8 animate-spin mx-auto text-amber-400 mb-2" />
                 <p className="text-slate-300">Distributing secret questions...</p>
+                <button
+                  type="button"
+                  onClick={handleManualFetchCard}
+                  className="px-4 py-2 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition flex items-center gap-1.5 mx-auto"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Fetch My Question</span>
+                </button>
               </div>
             )}
 
