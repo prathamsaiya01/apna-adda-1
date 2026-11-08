@@ -104,7 +104,40 @@ const HINGLISH_EXPANSIONS = {
   "5 day": "test cricket",
   "five day": "test cricket",
   "red ball": "test cricket",
-  "tracer bullet": "ravi shastri"
+  "tracer bullet": "ravi shastri",
+  // Bollywood & Entertainment expansions
+  "srk": "shah rukh khan",
+  "king khan": "shah rukh khan",
+  "rk": "ranbir kapoor",
+  "bebo": "kareena kapoor",
+  "big b": "amitabh bachchan",
+  "rancho": "aamir khan",
+  "virus": "boman irani",
+  "baburao": "hera pheri",
+  "baburao apte": "hera pheri",
+  "yjhd": "yeh jawaani hai deewani",
+  "znmd": "zindagi na milegi dobara",
+  "aaa": "andaz apna apna",
+  "mcu": "marvel cinematic universe",
+  "mere paas maa hai": "deewar",
+  "kitne aadmi the": "sholay",
+  "don ko pakadna": "don",
+  "all is well": "3 idiots",
+  "tum hi ho": "aashiqui 2",
+  "kun faya kun": "rockstar",
+  "bekhayali": "kabir singh",
+  "balam pichkari": "yeh jawaani hai deewani",
+  "spidey": "spider-man",
+  "peter parker": "spider-man",
+  "himym": "how i met your mother",
+  "ted mosby": "ted mosby",
+  "kishore da": "kishore kumar",
+  "gogo": "crime master gogo",
+  "crime master gogo": "crime master gogo",
+  "mogambo": "mogambo",
+  "mogambo khush hua": "mogambo",
+  "kancha": "kancha cheena",
+  "kancha cheena": "kancha cheena"
 };
 
 /**
@@ -255,7 +288,9 @@ function semanticMatchAnswer(rawInput, question, options = {}) {
     // ----------------------------------------------------
     const hinglishList = [
       ...(Array.isArray(ans.hinglish) ? ans.hinglish : []),
+      ...(Array.isArray(ans.hinglishExamples) ? ans.hinglishExamples : []),
       ...(Array.isArray(ans.spellingVariations) ? ans.spellingVariations : []),
+      ...(Array.isArray(ans.commonVariations) ? ans.commonVariations : []),
       ...(Array.isArray(ans.semanticExamples) ? ans.semanticExamples : [])
     ];
 

@@ -1526,6 +1526,71 @@ try {
   console.warn("Could not auto-load cricket batch:", e.message);
 }
 
+// Auto-load Bollywood & Entertainment Batch 2 (BOLLYWOOD_016 to BOLLYWOOD_030) if available
+let BATCH_BOLLYWOOD_2 = null;
+try {
+  const jsonPath2 = path.join(__dirname, '../data/whats_the_majority_batch_2_questions_16_30.json');
+  if (fs.existsSync(jsonPath2)) {
+    const raw2 = JSON.parse(fs.readFileSync(jsonPath2, 'utf8'));
+    if (Array.isArray(raw2.questions)) {
+      BATCH_BOLLYWOOD_2 = {
+        batchId: raw2.batchId || 2,
+        batchRange: raw2.batchRange || { startQuestion: 16, endQuestion: 30 },
+        batchName: "Bollywood & Entertainment (Batch 2)",
+        category: raw2.category || "Bollywood & Entertainment",
+        audienceProfile: raw2.audienceProfile || "Urban Indian college students and young adults",
+        sourceType: raw2.sourceType || "AI_ESTIMATE",
+        validationStatus: raw2.validationStatus || "UNVERIFIED",
+        questions: raw2.questions.map((q, idx) => ({
+          id: q.id || `BOLLYWOOD_${String(idx + 16).padStart(3, '0')}`,
+          batchId: raw2.batchId || 2,
+          questionNumber: q.questionNumber || (idx + 16),
+          question: q.question,
+          category: raw2.category || "Bollywood & Entertainment",
+          answerFormat: q.answerFormat || "OPEN_ENDED",
+          visibleOptions: Array.isArray(q.visibleOptions) ? q.visibleOptions : undefined,
+          audienceProfile: "Urban Indian college students and young adults",
+          answers: (q.answers || []).map((a, aIdx) => {
+            const canonicalId = a.canonicalAnswerId || a.id || `${q.id}_A${a.rank || aIdx + 1}`;
+            const allAliases = [
+              ...(Array.isArray(a.aliases) ? a.aliases : []),
+              ...(Array.isArray(a.acceptedPhrases) ? a.acceptedPhrases : []),
+              ...(Array.isArray(a.synonyms) ? a.synonyms : []),
+              ...(Array.isArray(a.commonVariations) ? a.commonVariations : [])
+            ];
+            const allKeywords = [
+              ...(Array.isArray(a.keywords) ? a.keywords : [a.canonicalAnswer.toLowerCase()]),
+              ...allAliases.map(x => x.toLowerCase())
+            ];
+            return {
+              id: canonicalId,
+              canonicalAnswerId: canonicalId,
+              rank: a.rank,
+              canonicalAnswer: a.canonicalAnswer,
+              points: a.points || (a.rank === 1 ? 40 : a.rank === 2 ? 30 : a.rank === 3 ? 20 : 10),
+              estimatedShare: a.estimatedShare,
+              keywords: Array.from(new Set(allKeywords)),
+              synonyms: a.synonyms || [],
+              acceptedPhrases: a.acceptedPhrases || [],
+              commonVariations: a.commonVariations || [],
+              hinglishExamples: a.hinglishExamples || [],
+              semanticExamples: a.semanticExamples || [],
+              contextualGuidance: a.contextualGuidance || "",
+              nonMatchingExamples: a.nonMatchingExamples || []
+            };
+          }),
+          sourceType: raw2.sourceType || "AI_ESTIMATE",
+          validationStatus: raw2.validationStatus || "UNVERIFIED"
+        }))
+      };
+      BATCH_REGISTRY.set(2, BATCH_BOLLYWOOD_2);
+      BATCH_REGISTRY.set(102, BATCH_BOLLYWOOD_2);
+    }
+  }
+} catch (e) {
+  console.warn("Could not auto-load bollywood batch:", e.message);
+}
+
 /**
  * Register or import a new batch of 15 questions.
  * Validates schema and ensures integrity without modifying game engines.
@@ -1556,7 +1621,13 @@ function getBatch(batchId) {
  * Returns all registered batches
  */
 function getAllBatches() {
-  return Array.from(BATCH_REGISTRY.values()).sort((a, b) => a.batchId - b.batchId);
+  const uniqueBatches = new Map();
+  for (const b of BATCH_REGISTRY.values()) {
+    if (b && b.batchId) {
+      uniqueBatches.set(b.batchId, b);
+    }
+  }
+  return Array.from(uniqueBatches.values()).sort((a, b) => a.batchId - b.batchId);
 }
 
 /**
@@ -1564,9 +1635,15 @@ function getAllBatches() {
  */
 function getAllBatchedQuestions() {
   const all = [];
+  const seenIds = new Set();
   getAllBatches().forEach(b => {
     if (Array.isArray(b.questions)) {
-      all.push(...b.questions);
+      b.questions.forEach(q => {
+        if (!seenIds.has(q.id)) {
+          seenIds.add(q.id);
+          all.push(q);
+        }
+      });
     }
   });
   return all;
@@ -1579,5 +1656,7 @@ module.exports = {
   getAllBatches,
   getAllBatchedQuestions,
   BATCH_1,
-  BATCH_2
+  BATCH_2,
+  BATCH_CRICKET_1,
+  BATCH_BOLLYWOOD_2
 };
