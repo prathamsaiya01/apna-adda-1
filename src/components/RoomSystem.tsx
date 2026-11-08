@@ -46,6 +46,12 @@ type Room = {
 
 const GAME_OPTIONS = [
   {
+    key: "WhatsTheMajority",
+    label: "What's the Majority?",
+    desc: "Guess what the crowd thinks. Beat your Adda! (2-12 players)",
+    minPlayers: 2
+  },
+  {
     key: "BluffMasters",
     label: "Bluff Masters",
     desc: "Spot the secret Bluffer with the different question!",

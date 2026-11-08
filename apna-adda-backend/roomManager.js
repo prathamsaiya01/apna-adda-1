@@ -8,10 +8,12 @@ const DumbCharadesEngine = require("./games/dumbCharadesEngine");
 const HollywoodBollywoodEngine = require("./games/hollywoodBollywoodEngine");
 const MafiaEngine = require("./games/mafiaEngine");
 const BluffMastersEngine = require("./games/bluffMastersEngine");
+const WhatsTheMajorityEngine = require("./games/whatsTheMajorityEngine");
 
 function normalizeGameKey(key) {
   if (!key) return "";
   const clean = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (clean.includes("majority") || clean.includes("whatsthemajority")) return "WhatsTheMajority";
   if (clean.includes("bluff")) return "BluffMasters";
   if (clean.includes("atlas") || clean.includes("cricketer")) return "CricketersAtlas";
   if (clean.includes("white")) return "MrWhite";
@@ -24,6 +26,14 @@ function normalizeGameKey(key) {
 }
 
 const GAME_CONFIGS = {
+  WhatsTheMajority: {
+    name: "What's the Majority?",
+    minPlayers: 2,
+    maxPlayers: 12,
+    exactCount: false,
+    requiresReady: false,
+    description: "Guess what the crowd thinks. Beat your Adda! (2-12 players)"
+  },
   BluffMasters: {
     name: "Bluff Masters",
     minPlayers: 3,
@@ -479,6 +489,9 @@ class RoomManager {
     // Instantiate appropriate game engine
     let engine = null;
     switch (room.gameKey) {
+      case "WhatsTheMajority":
+        engine = new WhatsTheMajorityEngine(room, this.io);
+        break;
       case "BluffMasters":
         engine = new BluffMastersEngine(room, this.io);
         break;

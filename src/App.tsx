@@ -27,6 +27,7 @@ import HollywoodBollywoodGame from './components/HollywoodBollywoodGame';
 import WhoAmI from './components/WhoAmI';
 import MafiaGame from './components/MafiaGame';
 import BluffMasters from './components/BluffMasters';
+import WhatsTheMajority from './components/WhatsTheMajority';
 import AdminPanelMultiplayer from './components/AdminPanelMultiplayer';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -119,6 +120,13 @@ function App() {
         setCurrentView("game");
         break;
 
+      case "whats-the-majority":
+      case "whatsthemajority":
+      case "majority":
+        setCurrentGame("WhatsTheMajority");
+        setCurrentView("game");
+        break;
+
       default:
         break;
     }
@@ -180,6 +188,16 @@ function App() {
       comingSoon: false,
       isNew: true,
       component: 'Mafia'
+    },
+    {
+      id: 2.2,
+      name: "What's the Majority?",
+      description: "Guess what the crowd thinks. Beat your Adda! (2-12 players)",
+      icon: <Users className="w-8 h-8" />,
+      color: "from-purple-600 to-indigo-700",
+      comingSoon: false,
+      isNew: true,
+      component: 'WhatsTheMajority'
     },
     {
       id: 2.5,
@@ -366,6 +384,17 @@ function App() {
           )}
           {currentGame === 'Mafia' && (
             <MafiaGame onBack={handleBackToHome} username={savedUsername} roomId={currentRoomId} />
+          )}
+          {currentGame === 'WhatsTheMajority' && (
+            <WhatsTheMajority
+              onBack={handleBackToHome}
+              onGoToMultiplayer={() => {
+                setCurrentView('rooms');
+                setCurrentGame(null);
+              }}
+              username={savedUsername}
+              roomId={currentRoomId}
+            />
           )}
           {currentGame === 'BluffMasters' && (
             <BluffMasters
