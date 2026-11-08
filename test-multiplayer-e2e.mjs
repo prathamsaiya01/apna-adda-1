@@ -3,7 +3,7 @@ import { io as Client } from "socket.io-client";
 import backend from "./apna-adda-backend/index.js";
 
 const { server, roomManager } = backend;
-const TEST_PORT = server.address()?.port || 4000;
+const TEST_PORT = 4006;
 const SERVER_URL = `http://localhost:${TEST_PORT}`;
 
 function createClient(userId, name) {

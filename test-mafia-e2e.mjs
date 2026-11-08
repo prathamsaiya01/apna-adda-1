@@ -4,7 +4,7 @@ import backend from "./apna-adda-backend/index.js";
 const MafiaEngine = (await import("./apna-adda-backend/games/mafiaEngine.js")).default;
 
 const { server, roomManager } = backend;
-const TEST_PORT = server.address()?.port || 4000;
+const TEST_PORT = 4007;
 const SERVER_URL = `http://localhost:${TEST_PORT}`;
 
 function createClient(userId, name) {
