@@ -368,7 +368,15 @@ function App() {
             <MafiaGame onBack={handleBackToHome} username={savedUsername} roomId={currentRoomId} />
           )}
           {currentGame === 'BluffMasters' && (
-            <BluffMasters onBack={handleBackToHome} username={savedUsername} roomId={currentRoomId} />
+            <BluffMasters
+              onBack={handleBackToHome}
+              onGoToMultiplayer={() => {
+                setCurrentView('rooms');
+                setCurrentGame(null);
+              }}
+              username={savedUsername}
+              roomId={currentRoomId}
+            />
           )}
         </>
       )}

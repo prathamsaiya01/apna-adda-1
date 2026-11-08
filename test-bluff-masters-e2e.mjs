@@ -5,7 +5,7 @@ const BluffMastersEngine = (await import("./apna-adda-backend/games/bluffMasters
 const { BLUFF_MASTERS_QUESTIONS, CATEGORIES } = (await import("./apna-adda-backend/games/bluffMastersQuestions.js")).default || (await import("./apna-adda-backend/games/bluffMastersQuestions.js"));
 
 const { server, roomManager } = backend;
-const TEST_PORT = server.address()?.port || 4000;
+const TEST_PORT = 4005;
 const SERVER_URL = `http://localhost:${TEST_PORT}`;
 
 function createClient(userId, name) {

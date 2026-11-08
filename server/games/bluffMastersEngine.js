@@ -541,6 +541,24 @@ class BluffMastersEngine {
   // ACTION DISPATCHER
   // -------------------------------------------------------------
   handleAction(userId, action, payload, callback) {
+    if (action === 'getPrivateCard') {
+      if (this.privateRoundData && this.privateRoundData.questionPair) {
+        const isBluffer = this.privateRoundData.blufferUserIds.includes(userId);
+        const card = {
+          role: isBluffer ? 'bluffer' : 'regular',
+          isBluffer,
+          question: isBluffer ? this.privateRoundData.questionPair.blufferQuestion : this.privateRoundData.questionPair.regularQuestion,
+          category: this.privateRoundData.questionPair.category,
+          difficulty: this.privateRoundData.questionPair.difficulty,
+          roundNumber: this.state.roundNumber,
+          totalRounds: this.state.totalRounds,
+          timer: this.state.timer
+        };
+        return callback && callback({ ok: true, card, privateCard: card });
+      }
+      return callback && callback({ error: "No active round data available." });
+    }
+
     if (action === 'submitAnswer') {
       const res = this.submitAnswer(userId, payload.answer || payload.text);
       return callback && callback(res);
